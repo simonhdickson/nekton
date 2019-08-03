@@ -8,6 +8,8 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 
 use failure::Error;
+use futures::stream::Stream;
+use log::*;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use typetag::*;
@@ -57,7 +59,7 @@ struct StdIn;
 
 #[typetag::serde]
 impl Producer for StdIn {
-    fn start(&self) -> Receiver<Option<Transaction>> {
+    fn start(&self) -> Receiver<Option<Transaction>> {            
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             loop {
@@ -77,6 +79,66 @@ impl Producer for StdIn {
 
             }
         });
+        receiver
+    }
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct Kafka {
+    brokers: String,
+    topics: Vec<String>,
+    group_id: String
+}
+
+#[typetag::serde]
+impl Producer for Kafka {
+    fn start(&self) -> Receiver<Option<Transaction>> {
+        use rdkafka::message::{Message as KafkaMessage};
+        use rdkafka::consumer::{Consumer, CommitMode};
+        use rdkafka::consumer::stream_consumer::StreamConsumer;
+        use rdkafka::config::{ClientConfig};
+
+        let (sender, receiver) = mpsc::channel();
+
+        let consumer: StreamConsumer = ClientConfig::new()
+            .set("group.id", &self.group_id)
+            .set("bootstrap.servers", &self.brokers)
+            .set("enable.partition.eof", "false")
+            .set("session.timeout.ms", "6000")
+            .set("enable.auto.commit", "true")
+            .create()
+            .expect("Consumer creation failed");
+
+        let topics: Vec<&str> = self.topics.iter().map(|s| &**s).collect();
+
+        consumer.subscribe(&topics)
+            .expect("Can't subscribe to specified topics");
+
+        let message_stream = consumer.start();
+
+        for message in message_stream.wait() {
+            match message {
+                Err(_) => warn!("Error while reading from stream."),
+                Ok(Err(e)) => warn!("Kafka error: {}", e),
+                Ok(Ok(m)) => {
+                    let payload = match m.payload_view::<[u8]>() {
+                        None => &[],
+                        Some(Ok(s)) => s,
+                        Some(Err(e)) => {
+                            warn!("Error while deserializing message payload: {:?}", e);
+                            &[]
+                        },
+                    };
+
+                    let mut message = Message::default();
+                    message.parts.push(MessagePart {  data: payload.into(),..Default::default() });
+                    sender.send(Some(Transaction { message })).unwrap();
+
+                    consumer.commit_message(&m, CommitMode::Async).unwrap();
+                },
+            };
+        }
+        
         receiver
     }
 }
