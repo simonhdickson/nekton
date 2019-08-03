@@ -114,30 +114,32 @@ impl Producer for Kafka {
         consumer.subscribe(&topics)
             .expect("Can't subscribe to specified topics");
 
-        let message_stream = consumer.start();
+        thread::spawn(move || {
+            let message_stream = consumer.start();
 
-        for message in message_stream.wait() {
-            match message {
-                Err(_) => warn!("Error while reading from stream."),
-                Ok(Err(e)) => warn!("Kafka error: {}", e),
-                Ok(Ok(m)) => {
-                    let payload = match m.payload_view::<[u8]>() {
-                        None => &[],
-                        Some(Ok(s)) => s,
-                        Some(Err(e)) => {
-                            warn!("Error while deserializing message payload: {:?}", e);
-                            &[]
-                        },
-                    };
+            for message in message_stream.wait() {
+                match message {
+                    Err(_) => warn!("Error while reading from stream."),
+                    Ok(Err(e)) => warn!("Kafka error: {}", e),
+                    Ok(Ok(m)) => {
+                        let payload = match m.payload_view::<[u8]>() {
+                            None => &[],
+                            Some(Ok(s)) => s,
+                            Some(Err(e)) => {
+                                warn!("Error while deserializing message payload: {:?}", e);
+                                &[]
+                            },
+                        };
 
-                    let mut message = Message::default();
-                    message.parts.push(MessagePart {  data: payload.into(),..Default::default() });
-                    sender.send(Some(Transaction { message })).unwrap();
+                        let mut message = Message::default();
+                        message.parts.push(MessagePart {  data: payload.into(),..Default::default() });
+                        sender.send(Some(Transaction { message })).unwrap();
 
-                    consumer.commit_message(&m, CommitMode::Async).unwrap();
-                },
-            };
-        }
+                        consumer.commit_message(&m, CommitMode::Async).unwrap();
+                    },
+                };
+            }
+        });
         
         receiver
     }
