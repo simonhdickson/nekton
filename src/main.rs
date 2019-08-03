@@ -130,30 +130,34 @@ impl Processor for Replace {
     }
 }
 
-//use regex::bytes::Regex;
-//
-//#[derive(Default, Deserialize, Serialize)]
-//struct RegexReplace {
-//    re: String,
-//    to: String,
-//    #[serde(skip)]
-//    regex: Option<Regex>
-//}
-//
-//#[typetag::serde]
-//impl Processor for RegexReplace {
-//    fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
-//        
-//        let r = self.regex.get_or_insert_with(|| Regex::new(&self.re).unwrap());
-//
-//        let mut new_msg = Message::default();
-//        for p in msg.parts {
-//            let data = r.replace_all(&p.data, &[]);
-//            new_msg.parts.push(MessagePart {  data: data.to_vec(),..Default::default() });
-//        }
-//        Ok(vec![new_msg])
-//    }
-//}
+use regex::Regex;
+
+#[derive(Default, Deserialize, Serialize)]
+struct RegexReplace {
+    re: String,
+    rep: String,
+    #[serde(skip)]
+    regex: Option<Regex>
+}
+
+#[typetag::serde]
+impl Processor for RegexReplace {
+    fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
+        let r = {
+            let re = &self.re;
+            self.regex.get_or_insert_with(|| Regex::new(re).unwrap());
+            &self.regex.as_ref().unwrap()
+        };
+
+        let mut new_msg = Message::default();
+        for p in msg.parts {
+            let source = str::from_utf8(&p.data).unwrap().to_owned();
+            let data = r.replace_all(&source, &*self.rep);
+            new_msg.parts.push(MessagePart {  data: data.into_owned().into(),..Default::default() });
+        }
+        Ok(vec![new_msg])
+    }
+}
 
 #[derive(Deserialize, Serialize)]
 struct Pipeline {

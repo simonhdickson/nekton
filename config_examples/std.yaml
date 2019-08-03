@@ -3,7 +3,10 @@ input:
 pipeline:
   processors:
     - type: Replace
-      from: ee
-      to: oo
+      from: cheese
+      to: bacon
+    - type: RegexReplace
+      re: "(?P<first>\\w+)\\s+(?P<second>\\w+)"
+      rep: "${first},$second"
 output:
   type: StdOut
