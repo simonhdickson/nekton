@@ -1,0 +1,9 @@
+input:
+  type: StdIn
+pipeline:
+  processors:
+    - type: Replace
+      from: ee
+      to: oo
+output:
+  type: StdOut
