@@ -1,5 +1,5 @@
 input:
-  type: KafkaIn
+  type: kafka
   topics: ["test-topic"]
   config:
     group.id: test-consumer
@@ -8,6 +8,6 @@ input:
     auto.offset.reset: earliest
 pipeline:
   processors:
-    - type: Noop
+    - type: noop
 output:
-  type: StdOut
+  type: stdout

@@ -24,7 +24,7 @@ pub struct Message {
 
 #[derive(Clone, Debug, Default)]
 pub struct MessagePart {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
     pub metadata: HashMap<String, String>,
 }
 
@@ -52,7 +52,7 @@ fn main() -> Result<(), Error> {
 
     let file = fs::File::open(&args[1])?;
 
-    let mut spec: Spec = serde_yaml::from_reader(file).unwrap();
+    let mut spec: Spec = serde_yaml::from_reader(file)?;
 
     let receiver = spec.input.start();
 
@@ -76,7 +76,7 @@ fn main() -> Result<(), Error> {
         }
 
         for message in messages {
-            sender.send(message).unwrap();
+            sender.send(message)?;
         }
 
         transaction.ack.send(())?;

@@ -6,10 +6,9 @@ use std::{
     thread
 };
 
-use futures::*;
-use log::*;
+use log::debug;
 use serde::{Serialize, Deserialize};
-use typetag;
+use typetag::serde;
 
 use crate::{Message, MessagePart, Transaction};
 
@@ -21,7 +20,7 @@ pub trait Source {
 #[derive(Default, Deserialize, Serialize)]
 struct StdIn;
 
-#[typetag::serde]
+#[typetag::serde(name = "stdin")]
 impl Source for StdIn {
     fn start(&self) -> Receiver<Option<Transaction>> {            
         let (sender, receiver) = mpsc::channel();
@@ -57,9 +56,10 @@ struct KafkaIn {
 }
 
 #[cfg(feature = "kafka")]
-#[typetag::serde]
+#[typetag::serde(name = "kafka")]
 impl Source for KafkaIn {
     fn start(&self) -> Receiver<Option<Transaction>> {
+        use futures::Stream;
         use rdkafka::message::Message as _;
         use rdkafka::client::ClientContext;
         use rdkafka::consumer::{Consumer, ConsumerContext, CommitMode, Rebalance};

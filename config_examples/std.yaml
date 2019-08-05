@@ -1,12 +1,12 @@
 input:
-  type: StdIn
+  type: stdin
 pipeline:
   processors:
-    - type: Replace
+    - type: replace
       from: cheese
       to: bacon
-    - type: RegexReplace
+    - type: regex_replace
       re: "(?P<first>\\w+)\\s+(?P<second>\\w+)"
       rep: "${first},$second"
 output:
-  type: StdOut
+  type: stdout

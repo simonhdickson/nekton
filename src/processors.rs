@@ -2,7 +2,7 @@ use std::str;
 
 use failure::Error;
 use serde::{Serialize, Deserialize};
-use typetag::*;
+use typetag::serde;
 
 use crate::{Message, MessagePart};
 
@@ -14,7 +14,7 @@ pub trait Processor {
 #[derive(Default, Deserialize, Serialize)]
 struct Noop;
 
-#[typetag::serde]
+#[typetag::serde(name = "noop")]
 impl Processor for Noop {
     fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
         Ok(vec![msg])
@@ -27,7 +27,7 @@ struct Replace {
     to: String
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "replace")]
 impl Processor for Replace {
     fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
         let mut new_msg = Message::default();
@@ -50,7 +50,7 @@ struct RegexReplace {
     regex: Option<Regex>
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "regex_replace")]
 impl Processor for RegexReplace {
     fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
         let r = {

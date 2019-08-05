@@ -1,10 +1,10 @@
 input:
-  type: StdIn
+  type: stdin
 pipeline:
   processors:
-    - type: Noop
+    - type: noop
 output:
-  type: KafkaOut
+  type: kafka
   topic: "test-topic"
   config:
     bootstrap.servers: "localhost:9092"

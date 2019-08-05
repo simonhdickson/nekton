@@ -5,10 +5,9 @@ use std::{
     thread
 };
 
-use futures::*;
-use log::*;
+use log::debug;
 use serde::{Serialize, Deserialize};
-use typetag;
+use typetag::serde;
 
 use crate::Message;
 
@@ -20,13 +19,16 @@ pub trait Sink {
 #[derive(Default, Deserialize, Serialize)]
 struct StdOut;
 
-#[typetag::serde]
+#[typetag::serde(name = "stdout")]
 impl Sink for StdOut {
     fn start(&self) -> Sender<Message> {
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             loop {
-                let message: Message = receiver.recv().unwrap();
+                let message: Message = match receiver.recv() {
+                    Ok(m) => m,
+                    Err(_) => return,
+                };
                 
                 for p in message.parts {
                     println!("{}", str::from_utf8(&p.data).unwrap())
@@ -45,9 +47,10 @@ struct KafkaOut {
 }
 
 #[cfg(feature = "kafka")]
-#[typetag::serde]
+#[typetag::serde(name = "kafka")]
 impl Sink for KafkaOut {
     fn start(&self) -> Sender<Message> {
+        use futures::Future;
         use rdkafka::config::ClientConfig;
         use rdkafka::producer::{FutureProducer, FutureRecord};
 
