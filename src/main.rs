@@ -27,7 +27,8 @@ pub struct MessagePart {
 }
 
 pub struct Transaction {
-    message: Message
+    message: Message,
+    ack: Sender<()>
 }
 
 pub fn parse<'a, T>(p: &'a MessagePart) -> Result<T, Error>
@@ -40,7 +41,7 @@ where
 }
 
 #[typetag::serde(tag = "type")]
-trait Producer {
+trait Source {
     fn start(&self) -> Receiver<Option<Transaction>>;
 }
 
@@ -50,15 +51,15 @@ trait Processor {
 }
 
 #[typetag::serde(tag = "type")]
-trait Consumer {
-    fn start(&self) -> Sender<Option<Transaction>>;
+trait Sink {
+    fn start(&self) -> Sender<Message>;
 }
 
 #[derive(Default, Deserialize, Serialize)]
 struct StdIn;
 
 #[typetag::serde]
-impl Producer for StdIn {
+impl Source for StdIn {
     fn start(&self) -> Receiver<Option<Transaction>> {            
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
@@ -71,8 +72,10 @@ impl Producer for StdIn {
                     },
                     Ok(_) => {
                         let mut message = Message::default();
-                        message.parts.push(MessagePart {  data: buffer[..buffer.len()-1].into(),..Default::default() });
-                        sender.send(Some(Transaction { message })).unwrap()
+                        message.parts.push(MessagePart { data: buffer[..buffer.len()-1].into(),..Default::default() });
+                        let (ack, receiver) = mpsc::channel();
+                        receiver.recv().unwrap();
+                        sender.send(Some(Transaction { message, ack })).unwrap();
                     }
                     Err(error) => panic!(error),
                 }
@@ -85,29 +88,53 @@ impl Producer for StdIn {
 
 #[derive(Default, Deserialize, Serialize)]
 struct KafkaIn {
-    brokers: String,
     topics: Vec<String>,
-    group_id: String
+    config: HashMap<String, String>
 }
 
 #[typetag::serde]
-impl Producer for KafkaIn {
+impl Source for KafkaIn {
     fn start(&self) -> Receiver<Option<Transaction>> {
-        use rdkafka::message::{Message as _};
-        use rdkafka::consumer::{Consumer, CommitMode};
+        use rdkafka::message::Message as _;
+        use rdkafka::client::ClientContext;
+        use rdkafka::consumer::{Consumer, ConsumerContext, CommitMode, Rebalance};
         use rdkafka::consumer::stream_consumer::StreamConsumer;
-        use rdkafka::config::{ClientConfig};
+        use rdkafka::config::ClientConfig;
+        use rdkafka::error::KafkaResult;
+
+        struct CustomContext;
+
+        impl ClientContext for CustomContext {}
+
+        impl ConsumerContext for CustomContext {
+            fn pre_rebalance(&self, rebalance: &Rebalance) {
+                debug!("Pre rebalance {:?}", rebalance);
+            }
+
+            fn post_rebalance(&self, rebalance: &Rebalance) {
+                debug!("Post rebalance {:?}", rebalance);
+            }
+
+            fn commit_callback(&self, result: KafkaResult<()>, _offsets: *mut rdkafka_sys::RDKafkaTopicPartitionList) {
+                debug!("Committing offsets: {:?}", result);
+            }
+        }
 
         let (sender, receiver) = mpsc::channel();
 
-        let consumer: StreamConsumer = ClientConfig::new()
-            .set("group.id", &self.group_id)
-            .set("bootstrap.servers", &self.brokers)
-            .create()
-            .expect("Consumer creation failed");
+        let mut config = &mut ClientConfig::new();
+
+        for (k, v) in &self.config {
+            config = config.set(k, v);
+        }
+        
+        let consumer: StreamConsumer<CustomContext> =
+            config
+                .create_with_context(CustomContext)
+                .expect("Consumer creation failed");
 
         let topics: Vec<&str> = self.topics.iter().map(|s| &**s).collect();
-
+        
         consumer.subscribe(&topics)
             .expect("Can't subscribe to specified topics");
 
@@ -116,24 +143,24 @@ impl Producer for KafkaIn {
 
             for message in message_stream.wait() {
                 match message {
-                    Err(_) => warn!("Error while reading from stream."),
-                    Ok(Err(e)) => warn!("Kafka error: {}", e),
+                    Err(_) => panic!("Error while reading from stream."),
+                    Ok(Err(e)) => panic!("Kafka error: {}", e),
                     Ok(Ok(m)) => {
-                        info!("got message");
-                        let payload = match m.payload_view::<[u8]>() {
-                            None => &[],
-                            Some(Ok(s)) => s,
+                        match m.payload_view::<[u8]>() {
+                            None => (),
+                            Some(Ok(payload)) => {
+                                let mut message = Message::default();
+                                message.parts.push(MessagePart { data: payload.into(),..Default::default() });
+                                
+                                let (ack, receiver) = mpsc::channel();
+                                sender.send(Some(Transaction { message, ack })).unwrap();
+                                receiver.recv().unwrap();
+                                consumer.commit_message(&m, CommitMode::Async).unwrap();
+                            },
                             Some(Err(e)) => {
-                                warn!("Error while deserializing message payload: {:?}", e);
-                                &[]
+                                panic!("Error while deserializing message payload: {:?}", e);
                             },
                         };
-
-                        let mut message = Message::default();
-                        message.parts.push(MessagePart {  data: payload.into(),..Default::default() });
-                        sender.send(Some(Transaction { message })).unwrap();
-
-                        consumer.commit_message(&m, CommitMode::Async).unwrap();
                     },
                 };
             }
@@ -147,15 +174,15 @@ impl Producer for KafkaIn {
 struct StdOut;
 
 #[typetag::serde]
-impl Consumer for StdOut {
-    fn start(&self) -> Sender<Option<Transaction>> {
+impl Sink for StdOut {
+    fn start(&self) -> Sender<Message> {
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             loop {
-                let transaction: Option<Transaction> = receiver.recv().unwrap();
+                let message: Message = receiver.recv().unwrap();
                 
-                for m in transaction.unwrap().message.parts {
-                    println!("{}", str::from_utf8(&m.data).unwrap())
+                for p in message.parts {
+                    println!("{}", str::from_utf8(&p.data).unwrap())
                 }
             }  
         });
@@ -165,31 +192,36 @@ impl Consumer for StdOut {
 
 #[derive(Default, Deserialize, Serialize)]
 struct KafkaOut {
-    brokers: String,
-    topic: String
+    topic: String,
+    config: HashMap<String, String>
 }
 
 #[typetag::serde]
-impl Consumer for KafkaOut {
-    fn start(&self) -> Sender<Option<Transaction>> {
+impl Sink for KafkaOut {
+    fn start(&self) -> Sender<Message> {
         use rdkafka::config::ClientConfig;
         use rdkafka::producer::{FutureProducer, FutureRecord};
 
         let (sender, receiver) = mpsc::channel();
 
-        let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", &self.brokers)
-            .set("message.timeout.ms", "5000")
-            .create()
-            .expect("Producer creation error");
+        let mut config = &mut ClientConfig::new();
+
+        for (k, v) in &self.config {
+            config = config.set(k, v);
+        }
+
+        let producer: FutureProducer = 
+            config
+                .create()
+                .expect("Producer creation error");
 
         let topic = self.topic.clone();
 
         thread::spawn(move || {
             loop {
-                let transaction: Option<Transaction> = receiver.recv().unwrap();
+                let message: Message = receiver.recv().unwrap();
                 
-                for m in transaction.unwrap().message.parts {
+                for m in message.parts {
                     producer.send(
                         FutureRecord::to(&topic)
                             .payload(&m.data)
@@ -273,9 +305,9 @@ struct Pipeline {
 
 #[derive(Deserialize, Serialize)]
 struct Spec {
-    input: Box<dyn Producer>,
+    input: Box<dyn Source>,
     pipeline: Pipeline,
-    output: Box<dyn Consumer>
+    output: Box<dyn Sink>
 }
 
 fn main() -> Result<(), Error> {
@@ -294,12 +326,12 @@ fn main() -> Result<(), Error> {
     loop {
         let transaction = receiver.recv()?;
 
-        match transaction {
+        let transaction = match transaction {
+            Some(transaction) => transaction,
             None => break,
-            Some(_) => (),
-        }
+        };
         
-        let mut messages = vec![transaction.unwrap().message];
+        let mut messages = vec![transaction.message.clone()];
         for processor in spec.pipeline.processors.iter_mut() {
             let mut new_messages = Vec::new();
             for message in messages {
@@ -309,8 +341,10 @@ fn main() -> Result<(), Error> {
         }
 
         for message in messages {
-            sender.send(Some(Transaction { message }))?;
+            sender.send(message).unwrap();
         }
+
+        transaction.ack.send(())?;
     }
 
     Ok(())

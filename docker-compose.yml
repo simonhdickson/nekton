@@ -1,25 +1,19 @@
 version: '2'
 services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
   kafka:
-    image: utilitywarehouse/docker-kafka:latest
+    image: wurstmeister/kafka
     environment:
-      ADVERTISED_HOST: kafka
+      ADVERTISED_HOST: localhost
       ADVERTISED_PORT: 9092
       AUTO_CREATE_TOPICS: "true"
-    networks:
-      net:
-        ipv4_address: 172.16.101.43
-    expose:
-      - "9092"
-      - "2181"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_HOST_NAME: localhost
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     ports:
       - "9092:9092"
-      - "2181:2181"
-
-networks:
-  net:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.16.101.40/29
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

@@ -5,5 +5,7 @@ pipeline:
     - type: Noop
 output:
   type: KafkaOut
-  brokers: "localhost:9092"
   topic: "hello-world"
+  config:
+    bootstrap.servers: "localhost:9092"
+    message.timeout.ms: 5000
