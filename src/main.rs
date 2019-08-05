@@ -45,15 +45,7 @@ struct Spec {
     output: Box<dyn Sink>
 }
 
-fn main() -> Result<(), Error> {
-    env_logger::init();
-
-    let args: Vec<String> = env::args().collect();
-
-    let file = fs::File::open(&args[1])?;
-
-    let mut spec: Spec = serde_yaml::from_reader(file)?;
-
+fn start_stream_processor(mut spec: Spec) -> Result<(), Error> {
     let receiver = spec.input.start();
 
     let sender = spec.output.start();
@@ -81,6 +73,20 @@ fn main() -> Result<(), Error> {
 
         transaction.ack.send(())?;
     }
+
+    Ok(())
+}
+
+fn main() -> Result<(), Error> {
+    env_logger::init();
+
+    let args: Vec<String> = env::args().collect();
+
+    let file = fs::File::open(&args[1])?;
+
+    let spec: Spec = serde_yaml::from_reader(file)?;
+
+    start_stream_processor(spec).unwrap();
 
     Ok(())
 }

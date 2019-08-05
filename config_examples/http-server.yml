@@ -1,0 +1,9 @@
+input:
+  type: http_server
+  address: 0.0.0.0:5000
+  path: /cheese
+pipeline:
+  processors:
+    - type: noop
+output:
+  type: stdout

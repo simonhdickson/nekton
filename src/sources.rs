@@ -13,7 +13,7 @@ use typetag::serde;
 use crate::{Message, MessagePart, Transaction};
 
 #[typetag::serde(tag = "type")]
-pub trait Source {
+pub trait Source : Send {
     fn start(&self) -> Receiver<Option<Transaction>>;
 }
 
@@ -131,6 +131,53 @@ impl Source for KafkaIn {
             }
         });
         
+        receiver
+    }
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct HttpServer{
+    address: String,
+    path: String
+}
+
+#[typetag::serde(name = "http_server")]
+impl Source for HttpServer {
+    fn start(&self) -> Receiver<Option<Transaction>> {
+        use tiny_http::{Method, Response, Server};
+
+        let (sender, receiver) = mpsc::channel();
+        
+        let server = Server::http(&self.address).unwrap();
+
+        let path = self.path.clone();
+
+        thread::spawn(move || {
+            for mut request in server.incoming_requests() {
+                if request.method() != &Method::Post {
+                    let response = Response::empty(405);
+                    request.respond(response).unwrap();
+                    continue
+                }
+                if request.url() != &path {
+                    let response = Response::empty(404);
+                    request.respond(response).unwrap();
+                    continue
+                }
+                let mut message = Message::default();
+                let mut buffer = Vec::new();
+                request.as_reader().read_to_end(&mut buffer).unwrap();
+                message.parts.push(MessagePart { data: buffer,..Default::default() });
+
+                let (ack, receiver) = mpsc::channel();
+                sender.send(Some(Transaction { message, ack })).unwrap();
+                receiver.recv().unwrap();
+
+                let response = Response::empty(201);
+                request.respond(response).unwrap();
+            }
+        });
+
         receiver
     }
 }

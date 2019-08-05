@@ -7,7 +7,7 @@ use typetag::serde;
 use crate::{Message, MessagePart};
 
 #[typetag::serde(tag = "type")]
-pub trait Processor {
+pub trait Processor : Send {
     fn process<'a>(&mut self, message: Message) -> Result<Vec<Message>, Error>;
 }
 

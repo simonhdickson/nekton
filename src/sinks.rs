@@ -12,7 +12,7 @@ use typetag::serde;
 use crate::Message;
 
 #[typetag::serde(tag = "type")]
-pub trait Sink {
+pub trait Sink : Send {
     fn start(&self) -> Sender<Message>;
 }
 

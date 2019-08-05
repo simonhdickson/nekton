@@ -8,6 +8,7 @@ edition = "2018"
 env_logger = "0.6"
 failure = "0.1"
 futures = { version = "0.1", optional = true }
+tiny_http = "0.6"
 log = "0.4"
 rdkafka = { version = "0.21", optional = true }
 rdkafka-sys = { version = "1.0", optional = true }
