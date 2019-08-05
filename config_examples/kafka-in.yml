@@ -1,6 +1,6 @@
 input:
   type: KafkaIn
-  topics: ["hello-world"]
+  topics: ["test-topic"]
   config:
     group.id: test-consumer
     bootstrap.servers: "localhost:9092"
