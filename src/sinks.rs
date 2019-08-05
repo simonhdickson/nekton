@@ -5,7 +5,7 @@ use std::{
     thread
 };
 
-use log::debug;
+use log::{debug, info};
 use serde::{Serialize, Deserialize};
 use typetag::serde;
 
@@ -27,7 +27,10 @@ impl Sink for StdOut {
             loop {
                 let message: Message = match receiver.recv() {
                     Ok(m) => m,
-                    Err(_) => return,
+                    Err(_) => {
+                        info!("sink exiting");
+                        return
+                    },
                 };
                 
                 for p in message.parts {
@@ -71,14 +74,20 @@ impl Sink for KafkaOut {
 
         thread::spawn(move || {
             loop {
-                let message: Message = receiver.recv().unwrap();
+                let message: Message = match receiver.recv() {
+                    Ok(m) => m,
+                    Err(_) => {
+                        info!("sink exiting");
+                        return
+                    },
+                };
                 
                 for m in message.parts {
                     producer.send(
                         FutureRecord::to(&topic)
                             .payload(&m.data)
-                            .key("0"),
-                        0
+                            .key(m.metadata.get("partition_key").unwrap_or(&"0".to_owned())),
+                        -1
                     )
                     .map(move |delivery_status| {
                         debug!("Delivery status for message {:?} received", delivery_status);
