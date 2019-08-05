@@ -8,7 +8,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 
 use failure::Error;
-use futures::stream::Stream;
+use futures::*;
 use log::*;
 use serde::{Serialize, Deserialize};
 use serde_json;
@@ -84,16 +84,16 @@ impl Producer for StdIn {
 }
 
 #[derive(Default, Deserialize, Serialize)]
-struct Kafka {
+struct KafkaIn {
     brokers: String,
     topics: Vec<String>,
     group_id: String
 }
 
 #[typetag::serde]
-impl Producer for Kafka {
+impl Producer for KafkaIn {
     fn start(&self) -> Receiver<Option<Transaction>> {
-        use rdkafka::message::{Message as KafkaMessage};
+        use rdkafka::message::{Message as _};
         use rdkafka::consumer::{Consumer, CommitMode};
         use rdkafka::consumer::stream_consumer::StreamConsumer;
         use rdkafka::config::{ClientConfig};
@@ -103,9 +103,6 @@ impl Producer for Kafka {
         let consumer: StreamConsumer = ClientConfig::new()
             .set("group.id", &self.group_id)
             .set("bootstrap.servers", &self.brokers)
-            .set("enable.partition.eof", "false")
-            .set("session.timeout.ms", "6000")
-            .set("enable.auto.commit", "true")
             .create()
             .expect("Consumer creation failed");
 
@@ -122,6 +119,7 @@ impl Producer for Kafka {
                     Err(_) => warn!("Error while reading from stream."),
                     Ok(Err(e)) => warn!("Kafka error: {}", e),
                     Ok(Ok(m)) => {
+                        info!("got message");
                         let payload = match m.payload_view::<[u8]>() {
                             None => &[],
                             Some(Ok(s)) => s,
@@ -158,6 +156,51 @@ impl Consumer for StdOut {
                 
                 for m in transaction.unwrap().message.parts {
                     println!("{}", str::from_utf8(&m.data).unwrap())
+                }
+            }  
+        });
+        sender
+    }
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct KafkaOut {
+    brokers: String,
+    topic: String
+}
+
+#[typetag::serde]
+impl Consumer for KafkaOut {
+    fn start(&self) -> Sender<Option<Transaction>> {
+        use rdkafka::config::ClientConfig;
+        use rdkafka::producer::{FutureProducer, FutureRecord};
+
+        let (sender, receiver) = mpsc::channel();
+
+        let producer: FutureProducer = ClientConfig::new()
+            .set("bootstrap.servers", &self.brokers)
+            .set("message.timeout.ms", "5000")
+            .create()
+            .expect("Producer creation error");
+
+        let topic = self.topic.clone();
+
+        thread::spawn(move || {
+            loop {
+                let transaction: Option<Transaction> = receiver.recv().unwrap();
+                
+                for m in transaction.unwrap().message.parts {
+                    producer.send(
+                        FutureRecord::to(&topic)
+                            .payload(&m.data)
+                            .key("0"),
+                        0
+                    )
+                    .map(move |delivery_status| {
+                        info!("Delivery status for message {:?} received", delivery_status);
+                        delivery_status
+                    })
+                    .wait().unwrap().unwrap();
                 }
             }  
         });
@@ -215,7 +258,7 @@ impl Processor for RegexReplace {
 
         let mut new_msg = Message::default();
         for p in msg.parts {
-            let source = str::from_utf8(&p.data).unwrap().to_owned();
+            let source = str::from_utf8(&p.data)?.to_owned();
             let data = r.replace_all(&source, &*self.rep);
             new_msg.parts.push(MessagePart {  data: data.into_owned().into(),..Default::default() });
         }
@@ -236,6 +279,8 @@ struct Spec {
 }
 
 fn main() -> Result<(), Error> {
+    env_logger::init();
+
     let args: Vec<String> = env::args().collect();
 
     let file = fs::File::open(&args[1])?;

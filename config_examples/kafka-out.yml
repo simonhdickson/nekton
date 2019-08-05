@@ -1,0 +1,9 @@
+input:
+  type: StdIn
+pipeline:
+  processors:
+    - type: Noop
+output:
+  type: KafkaOut
+  brokers: "localhost:9092"
+  topic: "hello-world"

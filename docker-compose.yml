@@ -1,0 +1,25 @@
+version: '2'
+services:
+  kafka:
+    image: utilitywarehouse/docker-kafka:latest
+    environment:
+      ADVERTISED_HOST: kafka
+      ADVERTISED_PORT: 9092
+      AUTO_CREATE_TOPICS: "true"
+    networks:
+      net:
+        ipv4_address: 172.16.101.43
+    expose:
+      - "9092"
+      - "2181"
+    ports:
+      - "9092:9092"
+      - "2181:2181"
+
+networks:
+  net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.101.40/29

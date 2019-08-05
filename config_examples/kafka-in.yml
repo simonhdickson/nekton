@@ -1,0 +1,10 @@
+input:
+  type: KafkaIn
+  brokers: "localhost:9092"
+  topics: ["hello-world"]
+  group_id: "test-consumer-10"
+pipeline:
+  processors:
+    - type: Noop
+output:
+  type: StdOut
