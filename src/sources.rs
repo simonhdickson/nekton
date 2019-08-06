@@ -135,12 +135,14 @@ impl Source for KafkaIn {
     }
 }
 
+#[cfg(feature = "http_server")]
 #[derive(Default, Deserialize, Serialize)]
 struct HttpServer{
     address: String,
     path: String
 }
 
+#[cfg(feature = "http_server")]
 #[typetag::serde(name = "http_server")]
 impl Source for HttpServer {
     fn start(&self) -> Receiver<Option<Transaction>> {

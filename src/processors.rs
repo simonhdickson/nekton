@@ -40,19 +40,22 @@ impl Processor for Replace {
     }
 }
 
-use regex::Regex;
 
+#[cfg(feature = "regexp")]
 #[derive(Default, Deserialize, Serialize)]
 struct RegexReplace {
     re: String,
     rep: String,
     #[serde(skip)]
-    regex: Option<Regex>
+    regex: Option<regex::Regex>
 }
 
+#[cfg(feature = "regexp")]
 #[typetag::serde(name = "regex_replace")]
 impl Processor for RegexReplace {
     fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
+        use regex::Regex;
+
         let r = {
             let re = &self.re;
             self.regex.get_or_insert_with(|| Regex::new(re).unwrap());

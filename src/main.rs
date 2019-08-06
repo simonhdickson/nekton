@@ -1,3 +1,10 @@
+mod processors;
+mod sinks;
+mod sources;
+
+#[cfg(feature = "proximo")]
+mod proximo;
+
 use std::{
     collections::HashMap,
     env,
@@ -5,10 +12,6 @@ use std::{
     str,
     sync::mpsc::Sender
 };
-
-mod processors;
-mod sinks;
-mod sources;
 
 use failure::Error;
 use processors::Processor;
@@ -78,6 +81,7 @@ fn start_stream_processor(mut spec: Spec) -> Result<(), Error> {
 }
 
 fn main() -> Result<(), Error> {
+    #[cfg(feature = "env_log")]
     env_logger::init();
 
     let args: Vec<String> = env::args().collect();
@@ -86,7 +90,7 @@ fn main() -> Result<(), Error> {
 
     let spec: Spec = serde_yaml::from_reader(file)?;
 
-    start_stream_processor(spec).unwrap();
+    start_stream_processor(spec)?;
 
     Ok(())
 }
