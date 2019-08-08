@@ -1,15 +1,10 @@
 use std::str;
 
 use failure::Error;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{Message, MessagePart};
-
-#[typetag::serde(tag = "type")]
-pub trait Processor : Send {
-    fn process<'a>(&mut self, message: Message) -> Result<Vec<Message>, Error>;
-}
+use crate::{Message, MessagePart, Processor};
 
 #[derive(Default, Deserialize, Serialize)]
 struct Noop;
@@ -24,7 +19,7 @@ impl Processor for Noop {
 #[derive(Default, Deserialize, Serialize)]
 struct Replace {
     from: String,
-    to: String
+    to: String,
 }
 
 #[typetag::serde(name = "replace")]
@@ -34,12 +29,14 @@ impl Processor for Replace {
         for p in msg.parts {
             let source = str::from_utf8(&p.data).unwrap().to_owned();
             let data = source.replace(&self.from, &self.to);
-            new_msg.parts.push(MessagePart {data:data.into(),..Default::default()});
+            new_msg.parts.push(MessagePart {
+                data: data.into(),
+                ..Default::default()
+            });
         }
         Ok(vec![new_msg])
     }
 }
-
 
 #[cfg(feature = "regexp")]
 #[derive(Default, Deserialize, Serialize)]
@@ -47,7 +44,7 @@ struct RegexReplace {
     re: String,
     rep: String,
     #[serde(skip)]
-    regex: Option<regex::Regex>
+    regex: Option<regex::Regex>,
 }
 
 #[cfg(feature = "regexp")]
@@ -66,7 +63,10 @@ impl Processor for RegexReplace {
         for p in msg.parts {
             let source = str::from_utf8(&p.data)?.to_owned();
             let data = r.replace_all(&source, &*self.rep);
-            new_msg.parts.push(MessagePart {  data: data.into_owned().into(),..Default::default() });
+            new_msg.parts.push(MessagePart {
+                data: data.into_owned().into(),
+                ..Default::default()
+            });
         }
         Ok(vec![new_msg])
     }

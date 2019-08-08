@@ -7,17 +7,12 @@ mod proximo;
 
 use std::{
     collections::HashMap,
-    env,
-    fs,
-    str,
-    sync::mpsc::Sender
+    env, fs, str,
+    sync::mpsc::{Receiver, Sender},
 };
 
 use failure::Error;
-use processors::Processor;
-use serde::{Serialize, Deserialize};
-use sinks::Sink;
-use sources::Source;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default)]
 pub struct Message {
@@ -33,19 +28,34 @@ pub struct MessagePart {
 
 pub struct Transaction {
     message: Message,
-    ack: Sender<()>
+    ack: Sender<()>,
+}
+
+#[typetag::serde(tag = "type")]
+pub trait Source: Send {
+    fn start(&self) -> Receiver<Option<Transaction>>;
+}
+
+#[typetag::serde(tag = "type")]
+pub trait Processor: Send {
+    fn process<'a>(&mut self, message: Message) -> Result<Vec<Message>, Error>;
+}
+
+#[typetag::serde(tag = "type")]
+pub trait Sink: Send {
+    fn start(&self) -> Sender<Message>;
 }
 
 #[derive(Deserialize, Serialize)]
 struct Pipeline {
-    processors: Vec<Box<dyn Processor>>
+    processors: Vec<Box<dyn Processor>>,
 }
 
 #[derive(Deserialize, Serialize)]
 struct Spec {
     input: Box<dyn Source>,
     pipeline: Pipeline,
-    output: Box<dyn Sink>
+    output: Box<dyn Sink>,
 }
 
 fn start_stream_processor(mut spec: Spec) -> Result<(), Error> {
@@ -60,7 +70,7 @@ fn start_stream_processor(mut spec: Spec) -> Result<(), Error> {
             Some(transaction) => transaction,
             None => break,
         };
-        
+
         let mut messages = vec![transaction.message.clone()];
         for processor in spec.pipeline.processors.iter_mut() {
             let mut new_messages = Vec::new();

@@ -1,47 +1,41 @@
 use std::{
     collections::HashMap,
-    io,
-    str,
+    io, str,
     sync::mpsc::{self, Receiver},
-    thread
+    thread,
 };
 
 use log::debug;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{Message, MessagePart, Transaction};
-
-#[typetag::serde(tag = "type")]
-pub trait Source : Send {
-    fn start(&self) -> Receiver<Option<Transaction>>;
-}
+use crate::{Message, MessagePart, Source, Transaction};
 
 #[derive(Default, Deserialize, Serialize)]
 struct StdIn;
 
 #[typetag::serde(name = "stdin")]
 impl Source for StdIn {
-    fn start(&self) -> Receiver<Option<Transaction>> {            
+    fn start(&self) -> Receiver<Option<Transaction>> {
         let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || {
-            loop {
-                let mut buffer = String::new();
-                match io::stdin().read_line(&mut buffer) {
-                    Ok(0) => {
-                        sender.send(None).unwrap();
-                        break
-                    },
-                    Ok(_) => {
-                        let mut message = Message::default();
-                        message.parts.push(MessagePart { data: buffer[..buffer.len()-1].into(),..Default::default() });
-                        let (ack, receiver) = mpsc::channel();
-                        sender.send(Some(Transaction { message, ack })).unwrap();
-                        receiver.recv().unwrap();
-                    }
-                    Err(error) => panic!(error),
+        thread::spawn(move || loop {
+            let mut buffer = String::new();
+            match io::stdin().read_line(&mut buffer) {
+                Ok(0) => {
+                    sender.send(None).unwrap();
+                    break;
                 }
-
+                Ok(_) => {
+                    let mut message = Message::default();
+                    message.parts.push(MessagePart {
+                        data: buffer[..buffer.len() - 1].into(),
+                        ..Default::default()
+                    });
+                    let (ack, receiver) = mpsc::channel();
+                    sender.send(Some(Transaction { message, ack })).unwrap();
+                    receiver.recv().unwrap();
+                }
+                Err(error) => panic!(error),
             }
         });
         receiver
@@ -52,7 +46,7 @@ impl Source for StdIn {
 #[derive(Default, Deserialize, Serialize)]
 struct KafkaIn {
     topics: Vec<String>,
-    config: HashMap<String, String>
+    config: HashMap<String, String>,
 }
 
 #[cfg(feature = "kafka")]
@@ -60,12 +54,12 @@ struct KafkaIn {
 impl Source for KafkaIn {
     fn start(&self) -> Receiver<Option<Transaction>> {
         use futures::Stream;
-        use rdkafka::message::Message as _;
         use rdkafka::client::ClientContext;
-        use rdkafka::consumer::{Consumer, ConsumerContext, CommitMode, Rebalance};
-        use rdkafka::consumer::stream_consumer::StreamConsumer;
         use rdkafka::config::ClientConfig;
+        use rdkafka::consumer::stream_consumer::StreamConsumer;
+        use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
         use rdkafka::error::KafkaResult;
+        use rdkafka::message::Message as _;
 
         struct CustomContext;
 
@@ -80,7 +74,11 @@ impl Source for KafkaIn {
                 debug!("Post rebalance {:?}", rebalance);
             }
 
-            fn commit_callback(&self, result: KafkaResult<()>, _offsets: *mut rdkafka_sys::RDKafkaTopicPartitionList) {
+            fn commit_callback(
+                &self,
+                result: KafkaResult<()>,
+                _offsets: *mut rdkafka_sys::RDKafkaTopicPartitionList,
+            ) {
                 debug!("Committing offsets: {:?}", result);
             }
         }
@@ -92,15 +90,15 @@ impl Source for KafkaIn {
         for (k, v) in &self.config {
             config = config.set(k, v);
         }
-        
-        let consumer: StreamConsumer<CustomContext> =
-            config
-                .create_with_context(CustomContext)
-                .expect("Consumer creation failed");
+
+        let consumer: StreamConsumer<CustomContext> = config
+            .create_with_context(CustomContext)
+            .expect("Consumer creation failed");
 
         let topics: Vec<&str> = self.topics.iter().map(|s| &**s).collect();
-        
-        consumer.subscribe(&topics)
+
+        consumer
+            .subscribe(&topics)
             .expect("Can't subscribe to specified topics");
 
         thread::spawn(move || {
@@ -115,31 +113,34 @@ impl Source for KafkaIn {
                             None => (),
                             Some(Ok(payload)) => {
                                 let mut message = Message::default();
-                                message.parts.push(MessagePart { data: payload.into(),..Default::default() });
-                                
+                                message.parts.push(MessagePart {
+                                    data: payload.into(),
+                                    ..Default::default()
+                                });
+
                                 let (ack, receiver) = mpsc::channel();
                                 sender.send(Some(Transaction { message, ack })).unwrap();
                                 receiver.recv().unwrap();
                                 consumer.commit_message(&m, CommitMode::Sync).unwrap();
-                            },
+                            }
                             Some(Err(e)) => {
                                 panic!("Error while deserializing message payload: {:?}", e);
-                            },
+                            }
                         };
-                    },
+                    }
                 };
             }
         });
-        
+
         receiver
     }
 }
 
 #[cfg(feature = "http_server")]
 #[derive(Default, Deserialize, Serialize)]
-struct HttpServer{
+struct HttpServer {
     address: String,
-    path: String
+    path: String,
 }
 
 #[cfg(feature = "http_server")]
@@ -149,7 +150,7 @@ impl Source for HttpServer {
         use tiny_http::{Method, Response, Server};
 
         let (sender, receiver) = mpsc::channel();
-        
+
         let server = Server::http(&self.address).unwrap();
 
         let path = self.path.clone();
@@ -159,17 +160,20 @@ impl Source for HttpServer {
                 if request.method() != &Method::Post {
                     let response = Response::empty(405);
                     request.respond(response).unwrap();
-                    continue
+                    continue;
                 }
                 if request.url() != &path {
                     let response = Response::empty(404);
                     request.respond(response).unwrap();
-                    continue
+                    continue;
                 }
                 let mut message = Message::default();
                 let mut buffer = Vec::new();
                 request.as_reader().read_to_end(&mut buffer).unwrap();
-                message.parts.push(MessagePart { data: buffer,..Default::default() });
+                message.parts.push(MessagePart {
+                    data: buffer,
+                    ..Default::default()
+                });
 
                 let (ack, receiver) = mpsc::channel();
                 sender.send(Some(Transaction { message, ack })).unwrap();
