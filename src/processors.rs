@@ -4,15 +4,15 @@ use failure::Error;
 use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{Message, MessagePart, Processor};
+use crate::{Message, MessageBatch, Processor};
 
 #[derive(Default, Deserialize, Serialize)]
 struct Noop;
 
 #[typetag::serde(name = "noop")]
 impl Processor for Noop {
-    fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
-        Ok(vec![msg])
+    fn process<'a>(&mut self, batch: MessageBatch) -> Result<Vec<MessageBatch>, Error> {
+        Ok(vec![batch])
     }
 }
 
@@ -24,17 +24,16 @@ struct Replace {
 
 #[typetag::serde(name = "replace")]
 impl Processor for Replace {
-    fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
-        let mut new_msg = Message::default();
-        for p in msg.parts {
-            let source = str::from_utf8(&p.data).unwrap().to_owned();
-            let data = source.replace(&self.from, &self.to);
-            new_msg.parts.push(MessagePart {
-                data: data.into(),
-                ..Default::default()
-            });
-        }
-        Ok(vec![new_msg])
+    fn process<'a>(&mut self, mut batch: MessageBatch) -> Result<Vec<MessageBatch>, Error> {
+        batch.messages = batch.messages
+            .into_iter()
+            .map(|mut message|{
+                let source = str::from_utf8(&message.data).unwrap().to_owned();
+                message.data = source.replace(&self.from, &self.to).into();
+                message
+            })
+            .collect();
+        Ok(vec![batch])
     }
 }
 
@@ -50,7 +49,7 @@ struct RegexReplace {
 #[cfg(feature = "regexp")]
 #[typetag::serde(name = "regex_replace")]
 impl Processor for RegexReplace {
-    fn process<'a>(&mut self, msg: Message) -> Result<Vec<Message>, Error> {
+    fn process<'a>(&mut self, mut batch: MessageBatch) -> Result<Vec<MessageBatch>, Error> {
         use regex::Regex;
 
         let r = {
@@ -59,15 +58,15 @@ impl Processor for RegexReplace {
             &self.regex.as_ref().unwrap()
         };
 
-        let mut new_msg = Message::default();
-        for p in msg.parts {
-            let source = str::from_utf8(&p.data)?.to_owned();
-            let data = r.replace_all(&source, &*self.rep);
-            new_msg.parts.push(MessagePart {
-                data: data.into_owned().into(),
-                ..Default::default()
-            });
-        }
-        Ok(vec![new_msg])
+        batch.messages = batch.messages
+            .into_iter()
+            .map(|mut message|{
+                let source = str::from_utf8(&message.data).unwrap().to_owned();
+                message.data = r.replace_all(&source, &*self.rep).into_owned().into();
+                message
+            })
+            .collect();
+
+        Ok(vec![batch])
     }
 }

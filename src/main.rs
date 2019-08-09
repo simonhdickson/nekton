@@ -2,48 +2,44 @@ mod processors;
 mod sinks;
 mod sources;
 
-#[cfg(feature = "proximo")]
-mod proximo;
+//#[cfg(feature = "proximo")]
+//mod proximo;
 
 use std::{
     collections::HashMap,
-    env, fs, str,
-    sync::mpsc::{Receiver, Sender},
+    env, fs, str
 };
 
-use failure::Error;
+use failure::{Error, SyncFailure};
+use futures::sync::mpsc::{channel, Receiver, Sender};
+use futures::{future::{self, Either}, Future, Stream};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default)]
-pub struct Message {
-    pub parts: Vec<MessagePart>,
+pub struct MessageBatch {
+    pub messages: Vec<Message>,
     pub metadata: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct MessagePart {
+pub struct Message {
     pub data: Vec<u8>,
     pub metadata: HashMap<String, String>,
 }
 
-pub struct Transaction {
-    message: Message,
-    ack: Sender<()>,
-}
-
 #[typetag::serde(tag = "type")]
 pub trait Source: Send {
-    fn start(&self) -> Receiver<Option<Transaction>>;
+    fn start(&self) -> Box<Stream<Item = MessageBatch, Error = Error> + Send>;
 }
 
 #[typetag::serde(tag = "type")]
 pub trait Processor: Send {
-    fn process<'a>(&mut self, message: Message) -> Result<Vec<Message>, Error>;
+    fn process<'a>(&mut self, message: MessageBatch) -> Result<Vec<MessageBatch>, Error>;
 }
 
 #[typetag::serde(tag = "type")]
 pub trait Sink: Send {
-    fn start(&self) -> Sender<Message>;
+    fn write(&self, messages: Vec<MessageBatch>) -> Result<(), Error>;
 }
 
 #[derive(Deserialize, Serialize)]
@@ -58,36 +54,25 @@ struct Spec {
     output: Box<dyn Sink>,
 }
 
-fn start_stream_processor(mut spec: Spec) -> Result<(), Error> {
-    let receiver = spec.input.start();
+fn start_stream_processor(mut spec: Spec) {
+    let source = spec.input.start();
 
-    let sender = spec.output.start();
-
-    loop {
-        let transaction = receiver.recv()?;
-
-        let transaction = match transaction {
-            Some(transaction) => transaction,
-            None => break,
-        };
-
-        let mut messages = vec![transaction.message.clone()];
-        for processor in spec.pipeline.processors.iter_mut() {
-            let mut new_messages = Vec::new();
-            for message in messages {
-                new_messages.append(&mut processor.process(message)?);
+    let task = source
+        .for_each(move |batch| {
+            let mut messages = vec![batch];
+            for processor in spec.pipeline.processors.iter_mut() {
+                let mut new_messages = Vec::new();
+                for message in messages {
+                    new_messages.append(&mut processor.process(message)?);
+                }
+                messages = new_messages;
             }
-            messages = new_messages;
-        }
+            
+            spec.output.write(messages)
+        })
+        .map_err(|e|panic!(e));
 
-        for message in messages {
-            sender.send(message)?;
-        }
-
-        transaction.ack.send(())?;
-    }
-
-    Ok(())
+    tokio::run(task);
 }
 
 fn main() -> Result<(), Error> {
@@ -100,7 +85,7 @@ fn main() -> Result<(), Error> {
 
     let spec: Spec = serde_yaml::from_reader(file)?;
 
-    start_stream_processor(spec)?;
+    start_stream_processor(spec);
 
     Ok(())
 }
