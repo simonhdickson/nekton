@@ -40,7 +40,7 @@ pub trait Source: Send {
 
 #[typetag::serde(tag = "type")]
 pub trait Processor: Send {
-    fn init(&self) {}
+    fn init(&mut self) {}
     fn process<'a>(
         &mut self,
         batches: BoxStream<MessageBatch, Error>,
@@ -49,7 +49,7 @@ pub trait Processor: Send {
 
 #[typetag::serde(tag = "type")]
 pub trait Sink: Send {
-    fn init(&self) {}
+    fn init(&mut self) {}
     fn write(&self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error>;
 }
 

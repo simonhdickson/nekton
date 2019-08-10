@@ -14,7 +14,7 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{Message, MessageBatch, Sink, Source};
+use crate::{BoxFuture, BoxStream, Message, MessageBatch, Sink, Source};
 
 struct CustomContext;
 
@@ -46,7 +46,7 @@ struct KafkaIn {
 
 #[typetag::serde(name = "kafka")]
 impl Source for KafkaIn {
-    fn start(&self) -> Box<dyn Stream<Item = MessageBatch, Error = Error> + Send> {
+    fn start(&self) -> BoxStream<MessageBatch, Error> {
         let (mut tx, rx) = channel(1);
 
         let mut config = &mut ClientConfig::new();
@@ -82,8 +82,6 @@ impl Source for KafkaIn {
                                     ..Default::default()
                                 });
 
-                                let (ack, receiver) = mpsc::channel();
-
                                 match tx.send(batch).wait() {
                                     Ok(s) => tx = s,
                                     Err(_) => break,
@@ -113,7 +111,7 @@ struct KafkaOut {
 
 #[typetag::serde(name = "kafka")]
 impl Sink for KafkaOut {
-    fn init(&self) {
+    fn init(&mut self) {
         let mut config = &mut ClientConfig::new();
 
         for (k, v) in &self.config {
@@ -124,14 +122,15 @@ impl Sink for KafkaOut {
             .replace(config.create().expect("producer creation error"));
     }
 
-    fn write(&self, batch: Vec<MessageBatch>) -> Future<Item = (), Error = Error> {
-        let producer = self.producer.ok_or_else(|| format_err!(""))?;
+    fn write(&self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error> {
+        let producer = self.producer.clone().unwrap();
+        let topic = self.topic.to_owned();
 
-        for m in batch {
-            for p in m.messages {
+        let result = batches.for_each(move |b| {
+            for m in b.messages {
                 producer
                     .send(
-                        FutureRecord::to(&self.topic)
+                        FutureRecord::to(&topic)
                             .payload(&m.data)
                             .key(m.metadata.get("partition_key").unwrap_or(&"0".to_owned())),
                         -1,
@@ -144,8 +143,10 @@ impl Sink for KafkaOut {
                     .unwrap()
                     .unwrap();
             }
-        }
 
-        ok(())
+            ok(())
+        });
+
+        Box::new(result)
     }
 }

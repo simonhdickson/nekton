@@ -42,7 +42,7 @@ uuid = { version = "0.7", features = ["v4"], optional = true }
 tower-grpc-build = { version = "0.1", optional = true }
 
 [features]
-default = ["env_log", "http_server", "regexp"]
+default = ["env_log", "http_server", "regexp", "unstable"]
 unstable = ["kafka", "proximo"]
 kafka = ["rdkafka", "rdkafka-sys"]
 proximo = ["bytes", "hyper", "prost", "tower-grpc", "tower-grpc-build", "tower-hyper", "tower-util", "uuid"]

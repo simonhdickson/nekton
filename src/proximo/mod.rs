@@ -8,7 +8,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use failure::{format_err, Error};
 use futures::{Future, Stream};
+use futures::future::ok;
+use futures::sync::mpsc::channel;
 use hyper::client::connect::{Destination, HttpConnector};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -22,7 +25,7 @@ pub mod proximo {
     include!(concat!(env!("OUT_DIR"), "/proximo.rs"));
 }
 
-use crate::{Message, MessagePart, Sink, Source, Transaction};
+use crate::{BoxFuture, BoxStream, Message, MessageBatch, Sink, Source};
 
 #[derive(Default, Deserialize, Serialize)]
 struct ProximoSource {
@@ -33,10 +36,10 @@ struct ProximoSource {
 
 #[typetag::serde(name = "proximo")]
 impl Source for ProximoSource {
-    fn start(&self) -> Receiver<Option<Transaction>> {
-        let (sender, receiver) = mpsc::channel();
+    fn start(&self) -> BoxStream<MessageBatch, Error> {
+        let (mut tx, rx) = channel(1);
 
-        receiver
+        Box::new(rx.map_err(|_| format_err!("failed to read")))
     }
 }
 
@@ -48,9 +51,7 @@ struct ProximoSink {
 
 #[typetag::serde(name = "proximo")]
 impl Sink for ProximoSink {
-    fn start(&self) -> Sender<Message> {
-        let (sender, receiver) = mpsc::channel();
-
-        sender
+    fn write(&self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error> {
+        Box::new(ok(()))
     }
 }
