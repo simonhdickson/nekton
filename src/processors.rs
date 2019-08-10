@@ -1,18 +1,22 @@
 use std::str;
 
 use failure::Error;
+use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{Message, MessageBatch, Processor};
+use crate::{BoxStream, MessageBatch, Processor};
 
 #[derive(Default, Deserialize, Serialize)]
 struct Noop;
 
 #[typetag::serde(name = "noop")]
 impl Processor for Noop {
-    fn process<'a>(&mut self, batch: MessageBatch) -> Result<Vec<MessageBatch>, Error> {
-        Ok(vec![batch])
+    fn process<'a>(
+        &mut self,
+        batches: BoxStream<MessageBatch, Error>,
+    ) -> BoxStream<MessageBatch, Error> {
+        batches
     }
 }
 
@@ -24,16 +28,22 @@ struct Replace {
 
 #[typetag::serde(name = "replace")]
 impl Processor for Replace {
-    fn process<'a>(&mut self, mut batch: MessageBatch) -> Result<Vec<MessageBatch>, Error> {
-        batch.messages = batch.messages
-            .into_iter()
-            .map(|mut message|{
+    fn process<'a>(
+        &mut self,
+        batches: BoxStream<MessageBatch, Error>,
+    ) -> BoxStream<MessageBatch, Error> {
+        let (from, to) = (self.from.to_owned(), self.to.to_owned());
+
+        let result = batches.map(move |mut b| {
+            b.messages = b.messages.into_iter().map(|mut message| {
                 let source = str::from_utf8(&message.data).unwrap().to_owned();
-                message.data = source.replace(&self.from, &self.to).into();
+                message.data = source.replace(&from, &to).into();
                 message
-            })
-            .collect();
-        Ok(vec![batch])
+            }).collect();
+            b
+        });
+
+        Box::new(result)
     }
 }
 
@@ -49,24 +59,27 @@ struct RegexReplace {
 #[cfg(feature = "regexp")]
 #[typetag::serde(name = "regex_replace")]
 impl Processor for RegexReplace {
-    fn process<'a>(&mut self, mut batch: MessageBatch) -> Result<Vec<MessageBatch>, Error> {
+    fn process<'a>(
+        &mut self,
+        batches: BoxStream<MessageBatch, Error>,
+    ) -> BoxStream<MessageBatch, Error> {
         use regex::Regex;
 
         let r = {
             let re = &self.re;
-            self.regex.get_or_insert_with(|| Regex::new(re).unwrap());
-            &self.regex.as_ref().unwrap()
+            self.regex.get_or_insert_with(|| Regex::new(re).unwrap()).clone()
         };
+        let rep = self.rep.to_owned();
 
-        batch.messages = batch.messages
-            .into_iter()
-            .map(|mut message|{
+        let result = batches.map(move |mut b| {
+            b.messages = b.messages.into_iter().map(|mut message| {
                 let source = str::from_utf8(&message.data).unwrap().to_owned();
-                message.data = r.replace_all(&source, &*self.rep).into_owned().into();
+                message.data = r.replace_all(&source, &*rep).into_owned().into();
                 message
-            })
-            .collect();
+            }).collect();
+            b
+        });
 
-        Ok(vec![batch])
+        Box::new(result)
     }
 }
