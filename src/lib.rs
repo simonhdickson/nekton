@@ -8,11 +8,14 @@ mod kafka;
 #[cfg(feature = "proximo")]
 mod proximo;
 
+#[cfg(feature = "regexp")]
+mod regex;
+
 use std::{collections::HashMap, env, fs, str};
 
 use failure::Error;
-use futures::{Future, Stream};
 use futures::future::ok;
+use futures::{Future, Stream};
 use serde::{Deserialize, Serialize};
 
 type BoxFuture<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;

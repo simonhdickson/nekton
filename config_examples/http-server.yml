@@ -4,6 +4,7 @@ input:
   path: /cheese
 pipeline:
   processors:
-    - type: noop
+    - type: regex_split
+      re: "[ \\t]+"
 output:
   type: stdout
