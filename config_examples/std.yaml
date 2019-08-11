@@ -5,8 +5,5 @@ pipeline:
     - type: replace
       from: cheese
       to: bacon
-    - type: regex_replace
-      re: "(?P<first>\\w+)\\s+(?P<second>\\w+)"
-      rep: "${first},$second"
 output:
   type: stdout

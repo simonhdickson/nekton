@@ -18,22 +18,27 @@ struct RegexReplace {
 
 #[typetag::serde(name = "regex_replace")]
 impl Processor for RegexReplace {
+    fn init(&mut self) {
+        self.regex.replace(Regex::new(&self.re).unwrap());
+    }
+
     fn process<'a>(
-        &mut self,
+        &self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error> {
-        let re = {
-            let re = &self.re;
-            self.regex.get_or_insert_with(|| Regex::new(re).unwrap()).clone()
-        };
+        let re = self.regex.clone().unwrap();
         let rep = self.rep.to_owned();
 
         let result = batches.map(move |mut b| {
-            b.messages = b.messages.into_iter().map(|mut message| {
-                let source = String::from_utf8(message.data).unwrap();
-                message.data = re.replace_all(&source, &*rep).into_owned().into_bytes();
-                message
-            }).collect();
+            b.messages = b
+                .messages
+                .into_iter()
+                .map(|mut message| {
+                    let source = String::from_utf8(message.data).unwrap();
+                    message.data = re.replace_all(&source, &*rep).into_owned().into_bytes();
+                    message
+                })
+                .collect();
             b
         });
 
@@ -50,14 +55,15 @@ struct RegexSplit {
 
 #[typetag::serde(name = "regex_split")]
 impl Processor for RegexSplit {
+    fn init(&mut self) {
+        self.regex.replace(Regex::new(&self.re).unwrap());
+    }
+
     fn process<'a>(
-        &mut self,
+        &self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error> {
-        let re = {
-            let re = &self.re;
-            self.regex.get_or_insert_with(|| Regex::new(re).unwrap()).clone()
-        };
+        let re = self.regex.clone().unwrap();
 
         let result = batches.map(move |mut b| {
             b.messages = b
@@ -67,7 +73,7 @@ impl Processor for RegexSplit {
                     let source = String::from_utf8(message.data).unwrap();
                     let new_messages: Vec<_> = re
                         .split(&source)
-                        .map(|m|m.to_owned())
+                        .map(|m| m.to_owned())
                         .map(|data| Message {
                             data: data.into_bytes(),
                             ..Default::default()

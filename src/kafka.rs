@@ -1,8 +1,7 @@
-use std::{collections::HashMap, str, sync::mpsc, thread};
+use std::{collections::HashMap, str};
 
-use failure::{format_err, Error};
-use futures::sync::mpsc::channel;
-use futures::{future::ok, Future, Sink as _, Stream};
+use failure::Error;
+use futures::{future::ok, Future, Stream};
 use log::debug;
 use rdkafka::client::ClientContext;
 use rdkafka::config::ClientConfig;
@@ -46,9 +45,7 @@ struct KafkaIn {
 
 #[typetag::serde(name = "kafka")]
 impl Source for KafkaIn {
-    fn start(&self) -> BoxStream<MessageBatch, Error> {
-        let (mut tx, rx) = channel(1);
-
+    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error> {
         let mut config = &mut ClientConfig::new();
 
         for (k, v) in &self.config {
@@ -65,39 +62,34 @@ impl Source for KafkaIn {
             .subscribe(&topics)
             .expect("Can't subscribe to specified topics");
 
-        thread::spawn(move || {
-            let message_stream = consumer.start();
+        let message_stream = consumer.start();
 
-            for message in message_stream.wait() {
-                match message {
-                    Err(_) => panic!("Error while reading from stream."),
-                    Ok(Err(e)) => panic!("Kafka error: {}", e),
-                    Ok(Ok(m)) => {
-                        match m.payload_view::<[u8]>() {
-                            None => (),
-                            Some(Ok(payload)) => {
-                                let mut batch = MessageBatch::default();
-                                batch.messages.push(Message {
-                                    data: payload.into(),
-                                    ..Default::default()
-                                });
+        for message in message_stream.wait() {
+            match message {
+                Err(_) => panic!("Error while reading from stream."),
+                Ok(Err(e)) => panic!("Kafka error: {}", e),
+                Ok(Ok(m)) => {
+                    match m.payload_view::<[u8]>() {
+                        None => (),
+                        Some(Ok(payload)) => {
+                            let mut batch = MessageBatch::default();
+                            batch.messages.push(Message {
+                                data: payload.into(),
+                                ..Default::default()
+                            });
 
-                                match tx.send(batch).wait() {
-                                    Ok(s) => tx = s,
-                                    Err(_) => break,
-                                }
-                                consumer.commit_message(&m, CommitMode::Sync).unwrap();
-                            }
-                            Some(Err(e)) => {
-                                panic!("Error while deserializing message payload: {:?}", e);
-                            }
-                        };
-                    }
-                };
-            }
-        });
+                            process(batch).wait().unwrap();
 
-        Box::new(rx.map_err(|_| format_err!("failed to read")))
+                            consumer.commit_message(&m, CommitMode::Sync).unwrap();
+                        }
+                        Some(Err(e)) => {
+                            panic!("Error while deserializing message payload: {:?}", e);
+                        }
+                    };
+                }
+            };
+        }
+        Box::new(ok(()))
     }
 }
 

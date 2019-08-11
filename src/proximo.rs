@@ -9,9 +9,9 @@ use std::{
 };
 
 use failure::{format_err, Error};
-use futures::{Future, Stream};
 use futures::future::ok;
 use futures::sync::mpsc::channel;
+use futures::{Future, Stream};
 use hyper::client::connect::{Destination, HttpConnector};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -36,10 +36,10 @@ struct ProximoSource {
 
 #[typetag::serde(name = "proximo")]
 impl Source for ProximoSource {
-    fn start(&self) -> BoxStream<MessageBatch, Error> {
-        let (mut tx, rx) = channel(1);
+    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error> {
+        let uri: http::Uri = format!("http://localhost:5000").parse().unwrap();
 
-        Box::new(rx.map_err(|_| format_err!("failed to read")))
+        Box::new(ok(()))
     }
 }
 

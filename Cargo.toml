@@ -45,7 +45,7 @@ tower-grpc-build = { version = "0.1", optional = true }
 default = ["env_log", "http_server", "regexp", "unstable"]
 unstable = ["kafka", "proximo"]
 kafka = ["rdkafka", "rdkafka-sys"]
-proximo = ["bytes", "hyper", "prost", "tower-grpc", "tower-grpc-build", "tower-hyper", "tower-util", "uuid"]
+proximo = ["bytes", "http", "hyper", "prost", "tower-grpc", "tower-grpc-build", "tower-hyper", "tower-util", "uuid"]
 regexp = ["regex"]
 http_server = ["http", "tiny_http"]
 env_log = ["env_logger"]

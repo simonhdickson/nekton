@@ -18,9 +18,9 @@ use futures::future::ok;
 use futures::{Future, Stream};
 use serde::{Deserialize, Serialize};
 
-type BoxFuture<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
+pub type BoxFuture<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
 
-type BoxStream<T, E> = Box<dyn Stream<Item = T, Error = E> + Send>;
+pub type BoxStream<T, E> = Box<dyn Stream<Item = T, Error = E> + Send>;
 
 #[derive(Clone, Debug, Default)]
 pub struct MessageBatch {
@@ -35,14 +35,14 @@ pub struct Message {
 
 #[typetag::serde(tag = "type")]
 pub trait Source: Send {
-    fn start(&self) -> BoxStream<MessageBatch, Error>;
+    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error>;
 }
 
 #[typetag::serde(tag = "type")]
 pub trait Processor: Send {
     fn init(&mut self) {}
     fn process<'a>(
-        &mut self,
+        &self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error>;
 }
@@ -66,19 +66,23 @@ pub struct Spec {
 }
 
 pub fn start_stream_processor(mut spec: Spec) {
-    let source = spec.input.start();
+    for processor in spec.pipeline.processors.iter_mut() {
+        processor.init();
+    }
 
-    let task = source
-        .for_each(move |batch| {
-            let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(batch).into_stream());
-            for processor in spec.pipeline.processors.iter_mut() {
-                batches = processor.process(batches);
-            }
-            spec.output.write(batches)
-        })
-        .map_err(|e| panic!(e));
+    let pipeline = &spec.pipeline;
+    let output = &spec.output;
 
-    tokio::run(task);
+    let task = spec.input.start(&move |batch| {
+        let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(batch).into_stream());
+        for processor in pipeline.processors.iter() {
+            batches = processor.process(batches);
+        }
+        output.write(batches).wait().unwrap();
+        Box::new(ok(()))
+    });
+
+    tokio::run(task.map_err(|e| panic!(e)));
 }
 
 pub fn run() -> Result<(), Error> {
