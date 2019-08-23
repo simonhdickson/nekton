@@ -1,12 +1,10 @@
 fn main() {
     #[cfg(feature = "proximo")]
-    {   
-        protoc_grpcio::compile_grpc_protos(
-            &["proximo.proto"],
-            &["proto/proximo"],
-            &"src/proximo/generated",
-            None
-        ).expect("Failed to compile gRPC definitions!");
+    {
+        tower_grpc_build::Config::new()
+            .enable_client(true)
+            .build(&["proto/proximo/proximo.proto"], &["proto/proximo"])
+            .unwrap_or_else(|e| panic!("protobuf compilation failed: {}", e));
         println!("cargo:rerun-if-changed=proto/proximo/proximo.proto");
     }
 }
