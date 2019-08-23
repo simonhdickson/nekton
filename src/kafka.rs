@@ -13,7 +13,7 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{BoxFuture, BoxStream, Message, MessageBatch, Sink, Source};
+use crate::{BoxFn, BoxFuture, BoxStream, Message, MessageBatch, Sink, Source, Transaction};
 
 struct CustomContext;
 
@@ -45,7 +45,7 @@ struct KafkaIn {
 
 #[typetag::serde(name = "kafka")]
 impl Source for KafkaIn {
-    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error> {
+    fn start(&self, mut f: BoxFn<Transaction, Error>) -> BoxFuture<(), Error> {
         let mut config = &mut ClientConfig::new();
 
         for (k, v) in &self.config {
@@ -78,7 +78,7 @@ impl Source for KafkaIn {
                                 ..Default::default()
                             });
 
-                            process(batch).wait().unwrap();
+                            f(Transaction { batch }).wait().unwrap();
 
                             consumer.commit_message(&m, CommitMode::Sync).unwrap();
                         }
@@ -114,7 +114,7 @@ impl Sink for KafkaOut {
             .replace(config.create().expect("producer creation error"));
     }
 
-    fn write(&self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error> {
+    fn write(&mut self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error> {
         let producer = self.producer.clone().unwrap();
         let topic = self.topic.to_owned();
 

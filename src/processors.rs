@@ -13,7 +13,7 @@ struct Noop;
 #[typetag::serde(name = "noop")]
 impl Processor for Noop {
     fn process<'a>(
-        &self,
+        &mut self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error> {
         batches
@@ -29,7 +29,7 @@ struct Replace {
 #[typetag::serde(name = "replace")]
 impl Processor for Replace {
     fn process<'a>(
-        &self,
+        &mut self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error> {
         let (from, to) = (self.from.to_owned(), self.to.to_owned());

@@ -23,7 +23,7 @@ impl Processor for RegexReplace {
     }
 
     fn process<'a>(
-        &self,
+        &mut self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error> {
         let re = self.regex.clone().unwrap();
@@ -60,7 +60,7 @@ impl Processor for RegexSplit {
     }
 
     fn process<'a>(
-        &self,
+        &mut self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error> {
         let re = self.regex.clone().unwrap();

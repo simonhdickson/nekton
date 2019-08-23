@@ -22,11 +22,19 @@ pub type BoxFuture<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
 
 pub type BoxStream<T, E> = Box<dyn Stream<Item = T, Error = E> + Send>;
 
+pub type BoxFn<T, E> = Box<dyn FnMut(T) -> BoxFuture<(), E> + Send>;
+
+#[derive(Debug)]
+pub struct Transaction {
+    pub batch: MessageBatch,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct MessageBatch {
     pub messages: Vec<Message>,
     pub metadata: HashMap<String, String>,
 }
+
 #[derive(Clone, Debug, Default)]
 pub struct Message {
     pub data: Vec<u8>,
@@ -35,14 +43,14 @@ pub struct Message {
 
 #[typetag::serde(tag = "type")]
 pub trait Source: Send {
-    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error>;
+    fn start(&self, sender: BoxFn<Transaction, Error>) -> BoxFuture<(), Error>;
 }
 
 #[typetag::serde(tag = "type")]
 pub trait Processor: Send {
     fn init(&mut self) {}
     fn process<'a>(
-        &self,
+        &mut self,
         batches: BoxStream<MessageBatch, Error>,
     ) -> BoxStream<MessageBatch, Error>;
 }
@@ -50,7 +58,7 @@ pub trait Processor: Send {
 #[typetag::serde(tag = "type")]
 pub trait Sink: Send {
     fn init(&mut self) {}
-    fn write(&self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error>;
+    fn write(&mut self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error>;
 }
 
 #[derive(Deserialize, Serialize)]
@@ -70,17 +78,17 @@ pub fn start_stream_processor(mut spec: Spec) {
         processor.init();
     }
 
-    let pipeline = &spec.pipeline;
-    let output = &spec.output;
+    let mut pipeline = spec.pipeline;
+    let mut output = spec.output;
 
-    let task = spec.input.start(&move |batch| {
-        let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(batch).into_stream());
-        for processor in pipeline.processors.iter() {
+    let task = spec.input.start(Box::new(move |tx| {
+        let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(tx.batch).into_stream());
+        for processor in pipeline.processors.iter_mut() {
             batches = processor.process(batches);
         }
         output.write(batches).wait().unwrap();
         Box::new(ok(()))
-    });
+    }));
 
     tokio::run(task.map_err(|e| panic!(e)));
 }

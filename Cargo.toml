@@ -35,6 +35,7 @@ tiny_http = { version = "0.6", optional = true }
 tower-grpc = { version = "0.1", optional = true }
 tower-grpc-build = { version = "0.1", optional = true }
 tower-hyper = { version = "0.1", optional = true }
+tower-request-modifier = { git = "https://github.com/tower-rs/tower-http", optional = true }
 tower-util = { version = "0.1", optional = true }
 uuid = { version = "0.7", features = ["v4"], optional = true }
 
@@ -42,10 +43,10 @@ uuid = { version = "0.7", features = ["v4"], optional = true }
 tower-grpc-build = { version = "0.1", optional = true }
 
 [features]
-default = ["env_log", "http_server", "regexp", "unstable"]
+default = ["env_log", "http_server", "regexp"]
 unstable = ["kafka", "proximo"]
 kafka = ["rdkafka", "rdkafka-sys"]
-proximo = ["bytes", "http", "hyper", "prost", "tower-grpc", "tower-grpc-build", "tower-hyper", "tower-util", "uuid"]
+proximo = ["bytes", "http", "hyper", "prost", "tower-grpc", "tower-grpc-build", "tower-hyper", "tower-request-modifier", "tower-util", "uuid"]
 regexp = ["regex"]
 http_server = ["http", "tiny_http"]
 env_log = ["env_logger"]

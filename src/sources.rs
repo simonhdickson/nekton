@@ -8,14 +8,14 @@ use futures::{future::ok, Future};
 use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{BoxFuture, Message, MessageBatch, Source};
+use crate::{BoxFn, BoxFuture, Message, MessageBatch, Source, Transaction};
 
 #[derive(Default, Deserialize, Serialize)]
 struct StdIn;
 
 #[typetag::serde(name = "stdin")]
 impl Source for StdIn {
-    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error> {
+    fn start(&self, mut f: BoxFn<Transaction, Error>) -> BoxFuture<(), Error> {
         let input = io::stdin();
         for line in input.lock().lines() {
             let mut batch = MessageBatch::default();
@@ -23,7 +23,7 @@ impl Source for StdIn {
                 data: line.unwrap().into_bytes(),
                 ..Default::default()
             });
-            process(batch).wait().unwrap();
+            f(Transaction { batch }).wait().unwrap();
         }
         Box::new(ok(()))
     }
@@ -39,7 +39,7 @@ struct HttpServer {
 #[cfg(feature = "http_server")]
 #[typetag::serde(name = "http_server")]
 impl Source for HttpServer {
-    fn start(&self, process: &Fn(MessageBatch) -> BoxFuture<(), Error>) -> BoxFuture<(), Error> {
+    fn start(&self, mut f: BoxFn<Transaction, Error>) -> BoxFuture<(), Error> {
         use tiny_http::{Method, Response, Server};
 
         let server = Server::http(&self.address).unwrap();
@@ -67,11 +67,12 @@ impl Source for HttpServer {
                 ..Default::default()
             });
 
-            process(batch).wait().unwrap();
+            f(Transaction { batch }).wait().unwrap();
 
             let response = Response::empty(201);
             request.respond(response).unwrap();
         }
+
         Box::new(ok(()))
     }
 }
