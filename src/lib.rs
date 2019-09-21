@@ -113,14 +113,18 @@ pub mod tests {
 
     #[macro_export]
     macro_rules! run_processor {
-        ( $process:expr, $expected:expr ) => {{
+        ( $process:expr, $input:expr ) => {{
             use crate::tests::block_on;
 
             use failure::format_err;
             use futures::stream;
 
-            block_on($process.process(Box::new(
-                stream::iter_ok::<_, ()>($expected).map_err(|_| format_err!("wtf")),
+            let process = &mut $process;
+
+            process.init();
+
+            block_on(process.process(Box::new(
+                stream::iter_ok::<_, ()>($input).map_err(|_| format_err!("wtf")),
             )))
         }};
     }
@@ -143,8 +147,8 @@ pub mod tests {
             vec![
                 $(
                     MessageBatch {
-                    messages: $messages,
-                    ..MessageBatch::default()
+                        messages: $messages,
+                        ..MessageBatch::default()
                     },
                 )*
             ]

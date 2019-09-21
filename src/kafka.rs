@@ -119,8 +119,8 @@ impl Sink for KafkaOut {
         let producer = self.producer.clone().unwrap();
         let topic = self.topic.to_owned();
 
-        let result = batches.for_each(move |b| {
-            for m in b.messages {
+        let result = batches.for_each(move |batch| {
+            for m in batch.messages {
                 producer
                     .send(
                         FutureRecord::to(&topic)

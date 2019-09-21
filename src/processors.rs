@@ -53,6 +53,55 @@ impl Processor for Replace {
     }
 }
 
+#[cfg(test)]
+mod replace_tests {
+    use super::*;
+
+    use crate::{no_metdata_batches, no_metdata_messages};
+
+    macro_rules! replace {
+        ( $from:expr, $to:expr, $input:expr ) => {{
+            $crate::run_processor!(
+                Replace {
+                    from: $from.into(),
+                    to: $to.into(),
+                },
+                $input
+            )
+        }};
+    }
+
+    #[test]
+    fn process_replace_message_test() {
+        assert_eq!(
+            replace!(
+                "ee",
+                "oo",
+                no_metdata_batches![no_metdata_messages![b"cheese|geese"]]
+            ),
+            no_metdata_batches![no_metdata_messages![b"choose|goose"]]
+        );
+    }
+
+    #[test]
+    fn process_replace_message_batch_test() {
+        assert_eq!(
+            replace!(
+                "ee",
+                "oo",
+                no_metdata_batches![
+                    no_metdata_messages![b"cheese|geese"],
+                    no_metdata_messages![b"cheese|geese"]
+                ]
+            ),
+            no_metdata_batches![
+                no_metdata_messages![b"choose|goose"],
+                no_metdata_messages![b"choose|goose"]
+            ]
+        );
+    }
+}
+
 #[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct Process {
     name: String,
@@ -108,19 +157,19 @@ impl Processor for Process {
 }
 
 #[cfg(test)]
-mod tests {
+mod process_tests {
     use super::*;
 
     use crate::{no_metdata_batches, no_metdata_messages};
 
     macro_rules! process {
-        ( $name:expr, $args:expr, $expected:expr ) => {{
+        ( $name:expr, $args:expr, $input:expr ) => {{
             $crate::run_processor!(
                 Process {
                     name: $name.into(),
                     args: $args.into_iter().map(|s| s.into()).collect(),
                 },
-                $expected
+                $input
             )
         }};
     }
