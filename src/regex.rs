@@ -8,7 +8,7 @@ use typetag::serde;
 
 use crate::{BoxStream, Message, MessageBatch, Processor};
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct RegexReplace {
     re: String,
     rep: String,
@@ -46,7 +46,7 @@ impl Processor for RegexReplace {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct RegexSplit {
     re: String,
     #[serde(skip)]

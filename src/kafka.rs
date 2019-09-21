@@ -37,7 +37,7 @@ impl ConsumerContext for CustomContext {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct KafkaIn {
     topics: Vec<String>,
     config: HashMap<String, String>,
@@ -94,7 +94,7 @@ impl Source for KafkaIn {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct KafkaOut {
     topic: String,
     config: HashMap<String, String>,

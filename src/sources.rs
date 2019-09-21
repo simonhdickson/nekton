@@ -10,7 +10,7 @@ use typetag::serde;
 
 use crate::{BoxFn, Message, MessageBatch, Source, Transaction};
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct StdIn;
 
 #[typetag::serde(name = "stdin")]
@@ -30,7 +30,7 @@ impl Source for StdIn {
 }
 
 #[cfg(feature = "http_server")]
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct HttpServer {
     address: String,
     path: String,

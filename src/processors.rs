@@ -9,7 +9,7 @@ use typetag::serde;
 
 use crate::{BoxStream, Message, MessageBatch, Processor};
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct Noop;
 
 #[typetag::serde(name = "noop")]
@@ -22,7 +22,7 @@ impl Processor for Noop {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct Replace {
     from: String,
     to: String,
@@ -53,7 +53,7 @@ impl Processor for Replace {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct Process {
     name: String,
     args: Vec<String>,
@@ -104,5 +104,36 @@ impl Processor for Process {
         });
 
         Box::new(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::{no_metdata_batches, no_metdata_messages};
+
+    macro_rules! process {
+        ( $name:expr, $args:expr, $expected:expr ) => {{
+            $crate::run_processor!(
+                Process {
+                    name: $name.into(),
+                    args: $args.into_iter().map(|s| s.into()).collect(),
+                },
+                $expected
+            )
+        }};
+    }
+
+    #[test]
+    fn process_awk_split_message_test() {
+        assert_eq!(
+            process!(
+                "awk",
+                vec!["-v", "RS=[,\n]", "{a=$0; print a}", "OFS=,"],
+                no_metdata_batches![no_metdata_messages![b"hello,world,cheese"]]
+            ),
+            no_metdata_batches![no_metdata_messages![b"hello", b"world", b"cheese"]]
+        );
     }
 }

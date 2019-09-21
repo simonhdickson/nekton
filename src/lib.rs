@@ -21,18 +21,18 @@ pub type BoxStream<T, E> = Box<dyn Stream<Item = T, Error = E> + Send>;
 
 pub type BoxFn<T, E> = Box<dyn FnMut(T) -> BoxFuture<(), E> + Send>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Transaction {
     pub batch: MessageBatch,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct MessageBatch {
     pub messages: Vec<Message>,
     pub metadata: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Message {
     pub data: Vec<u8>,
     pub metadata: HashMap<String, String>,
@@ -103,4 +103,65 @@ pub fn run() -> Result<(), Error> {
     start_stream_processor(spec);
 
     Ok(())
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    use futures::future::{ok, Future};
+
+    #[macro_export]
+    macro_rules! run_processor {
+        ( $process:expr, $expected:expr ) => {{
+            use crate::tests::block_on;
+
+            use failure::format_err;
+            use futures::stream;
+
+            block_on($process.process(Box::new(
+                stream::iter_ok::<_, ()>($expected).map_err(|_| format_err!("wtf")),
+            )))
+        }};
+    }
+
+    pub fn block_on(batches: BoxStream<MessageBatch, Error>) -> Vec<MessageBatch> {
+        let mut result = Vec::new();
+        batches
+            .for_each(|batch| {
+                result.push(batch);
+                ok(())
+            })
+            .wait()
+            .unwrap();
+        result
+    }
+
+    #[macro_export]
+    macro_rules! no_metdata_batches {
+        ( $( $messages:expr ),* ) => {{
+            vec![
+                $(
+                    MessageBatch {
+                    messages: $messages,
+                    ..MessageBatch::default()
+                    },
+                )*
+            ]
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! no_metdata_messages {
+        ( $( $message:expr ),* ) => {{
+            vec![
+                $(
+                    Message {
+                        data: $message.to_vec(),
+                        ..Message::default()
+                    },
+                )*
+            ]
+        }};
+    }
 }

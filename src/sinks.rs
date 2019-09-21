@@ -8,7 +8,7 @@ use typetag::serde;
 
 use crate::{BoxFuture, BoxStream, MessageBatch, Sink};
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct StdOut;
 
 #[typetag::serde(name = "stdout")]

@@ -32,6 +32,9 @@ regex = { version = "1.3", optional = true }
 tiny_http = { version = "0.6", optional = true }
 uuid = { version = "0.7", features = ["v4"], optional = true }
 
+[dev-dependencies]
+criterion = "0.3.0"
+
 [features]
 default = ["env_log", "http_server", "regexp"]
 unstable = ["kafka"]
