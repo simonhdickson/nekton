@@ -136,4 +136,22 @@ mod tests {
             no_metdata_batches![no_metdata_messages![b"hello", b"world", b"cheese"]]
         );
     }
+
+    #[test]
+    fn process_awk_split_message_batch_test() {
+        assert_eq!(
+            process!(
+                "awk",
+                vec!["-v", "RS=[,\n]", "{a=$0; print a}", "OFS=,"],
+                no_metdata_batches![
+                    no_metdata_messages![b"a,b,c"],
+                    no_metdata_messages![b"d,e,f"]
+                ]
+            ),
+            no_metdata_batches![
+                no_metdata_messages![b"a", b"b", b"c"],
+                no_metdata_messages![b"d", b"e", b"f"]
+            ]
+        );
+    }
 }
