@@ -5,9 +5,6 @@ mod sources;
 #[cfg(feature = "kafka")]
 mod kafka;
 
-#[cfg(feature = "proximo")]
-mod proximo;
-
 #[cfg(feature = "regexp")]
 mod regex;
 
@@ -43,7 +40,7 @@ pub struct Message {
 
 #[typetag::serde(tag = "type")]
 pub trait Source: Send {
-    fn start(&self, sender: BoxFn<Transaction, Error>) -> BoxFuture<(), Error>;
+    fn start(&self, sender: BoxFn<Transaction, Error>) -> Result<(), Error>;
 }
 
 #[typetag::serde(tag = "type")]
@@ -81,16 +78,16 @@ pub fn start_stream_processor(mut spec: Spec) {
     let mut pipeline = spec.pipeline;
     let mut output = spec.output;
 
-    let task = spec.input.start(Box::new(move |tx| {
-        let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(tx.batch).into_stream());
-        for processor in pipeline.processors.iter_mut() {
-            batches = processor.process(batches);
-        }
-        output.write(batches).wait().unwrap();
-        Box::new(ok(()))
-    }));
-
-    tokio::run(task.map_err(|e| panic!(e)));
+    spec.input
+        .start(Box::new(move |tx| {
+            let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(tx.batch).into_stream());
+            for processor in pipeline.processors.iter_mut() {
+                batches = processor.process(batches);
+            }
+            output.write(batches).wait().unwrap();
+            Box::new(ok(()))
+        }))
+        .unwrap();
 }
 
 pub fn run() -> Result<(), Error> {

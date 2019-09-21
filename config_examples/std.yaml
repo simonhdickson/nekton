@@ -5,5 +5,8 @@ pipeline:
     - type: replace
       from: cheese
       to: bacon
+    - type: process
+      name: awk
+      args: ["{split($0,a,\"|\"); print a[3],a[2],a[1]}"]
 output:
   type: stdout

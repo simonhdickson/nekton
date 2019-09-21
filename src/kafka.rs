@@ -45,7 +45,7 @@ struct KafkaIn {
 
 #[typetag::serde(name = "kafka")]
 impl Source for KafkaIn {
-    fn start(&self, mut f: BoxFn<Transaction, Error>) -> BoxFuture<(), Error> {
+    fn start(&self, mut f: BoxFn<Transaction, Error>) -> Result<(), Error> {
         let mut config = &mut ClientConfig::new();
 
         for (k, v) in &self.config {
@@ -89,7 +89,8 @@ impl Source for KafkaIn {
                 }
             };
         }
-        Box::new(ok(()))
+
+        Ok(())
     }
 }
 
