@@ -5,5 +5,8 @@ pipeline:
     - type: replace
       from: cheese
       to: bacon
+    - type: process
+      name: awk
+      args: ["-v", "RS=[,\n]", "{a=$0; print a}", "OFS=,"]
 output:
   type: stdout
