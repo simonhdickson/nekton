@@ -8,18 +8,19 @@ mod kafka;
 #[cfg(feature = "regexp")]
 mod regex;
 
-use std::{collections::HashMap, env, fs, str};
+use std::{collections::HashMap, fs, path::PathBuf, str};
 
 use failure::Error;
 use futures::future::ok;
 use futures::{Future, Stream};
 use serde::{Deserialize, Serialize};
+use structopt::StructOpt;
 
 pub type BoxFuture<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
 
 pub type BoxStream<T, E> = Box<dyn Stream<Item = T, Error = E> + Send>;
 
-pub type BoxFn<T, E> = Box<dyn FnMut(T) -> BoxFuture<(), E> + Send>;
+pub type BoxFn<T, E> = Box<dyn Fn(T) -> BoxFuture<(), E> + Send>;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Transaction {
@@ -43,19 +44,19 @@ pub trait Source: Send {
     fn start(&self, sender: BoxFn<Transaction, Error>) -> Result<(), Error>;
 }
 
+pub type ProcessHandler =
+    Box<dyn Fn(BoxStream<MessageBatch, Error>) -> BoxStream<MessageBatch, Error> + Send>;
+
 #[typetag::serde(tag = "type")]
 pub trait Processor: Send {
-    fn init(&mut self) {}
-    fn process<'a>(
-        &mut self,
-        batches: BoxStream<MessageBatch, Error>,
-    ) -> BoxStream<MessageBatch, Error>;
+    fn create<'a>(&self) -> ProcessHandler;
 }
+
+pub type WriteHandler = Box<dyn Fn(BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error> + Send>;
 
 #[typetag::serde(tag = "type")]
 pub trait Sink: Send {
-    fn init(&mut self) {}
-    fn write(&mut self, batches: BoxStream<MessageBatch, Error>) -> BoxFuture<(), Error>;
+    fn create<'a>(&self) -> WriteHandler;
 }
 
 #[derive(Deserialize, Serialize)]
@@ -70,33 +71,48 @@ pub struct Spec {
     output: Box<dyn Sink>,
 }
 
-pub fn start_stream_processor(mut spec: Spec) {
-    for processor in spec.pipeline.processors.iter_mut() {
-        processor.init();
-    }
+pub fn start_stream_processor(spec: Spec) {
+    let processors = spec
+        .pipeline
+        .processors
+        .into_iter()
+        .map(|p| p.create())
+        .collect::<Vec<_>>();
 
-    let mut pipeline = spec.pipeline;
-    let mut output = spec.output;
+    let output = spec.output.create();
 
     spec.input
         .start(Box::new(move |tx| {
             let mut batches: BoxStream<MessageBatch, Error> = Box::new(ok(tx.batch).into_stream());
-            for processor in pipeline.processors.iter_mut() {
-                batches = processor.process(batches);
+            for process in processors.iter() {
+                batches = process(batches);
             }
-            output.write(batches).wait().unwrap();
+            output(batches).wait().unwrap();
             Box::new(ok(()))
         }))
         .unwrap();
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "nekton", about = "Stream procesing library.")]
+struct Opt {
+    #[structopt(
+        parse(from_os_str),
+        short = "f",
+        long = "config_file",
+        env = "CONFIG_FILE",
+        default_value = "config.yml"
+    )]
+    config_file: PathBuf,
 }
 
 pub fn run() -> Result<(), Error> {
     #[cfg(feature = "env_log")]
     env_logger::init();
 
-    let args: Vec<String> = env::args().collect();
+    let opt = Opt::from_args();
 
-    let file = fs::File::open(&args[1])?;
+    let file = fs::File::open(opt.config_file)?;
 
     let spec: Spec = serde_yaml::from_reader(file)?;
 
@@ -119,11 +135,7 @@ pub mod tests {
             use failure::format_err;
             use futures::stream;
 
-            let process = &mut $process;
-
-            process.init();
-
-            block_on(process.process(Box::new(
+            block_on($process.create()(Box::new(
                 stream::iter_ok::<_, ()>($input).map_err(|_| format_err!("wtf")),
             )))
         }};
@@ -144,6 +156,8 @@ pub mod tests {
     #[macro_export]
     macro_rules! no_metdata_batches {
         ( $( $messages:expr ),* ) => {{
+            use crate::MessageBatch;
+
             vec![
                 $(
                     MessageBatch {

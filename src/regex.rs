@@ -1,48 +1,41 @@
 use std::str;
 
-use failure::Error;
 use futures::stream::Stream;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use typetag::serde;
 
-use crate::{BoxStream, Message, MessageBatch, Processor};
+use crate::{Message, ProcessHandler, Processor};
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct RegexReplace {
     re: String,
     rep: String,
-    #[serde(skip)]
-    regex: Option<regex::Regex>,
 }
 
 #[typetag::serde(name = "regex_replace")]
 impl Processor for RegexReplace {
-    fn init(&mut self) {
-        self.regex.replace(Regex::new(&self.re).unwrap());
-    }
-
-    fn process<'a>(
-        &mut self,
-        batches: BoxStream<MessageBatch, Error>,
-    ) -> BoxStream<MessageBatch, Error> {
-        let re = self.regex.clone().unwrap();
+    fn create<'a>(&self) -> ProcessHandler {
+        let re = Regex::new(&self.re).unwrap();
         let rep = self.rep.to_owned();
 
-        let result = batches.map(move |mut b| {
-            b.messages = b
-                .messages
-                .into_iter()
-                .map(|mut message| {
-                    let source = String::from_utf8(message.data).unwrap();
-                    message.data = re.replace_all(&source, &*rep).into_owned().into_bytes();
-                    message
-                })
-                .collect();
-            b
-        });
+        Box::new(move |batches| {
+            let (re, rep) = (re.clone(), rep.to_owned());
+            let result = batches.map(move |mut b| {
+                b.messages = b
+                    .messages
+                    .into_iter()
+                    .map(|mut message| {
+                        let source = String::from_utf8(message.data).unwrap();
+                        message.data = re.replace_all(&source, &*rep).into_owned().into_bytes();
+                        message
+                    })
+                    .collect();
+                b
+            });
 
-        Box::new(result)
+            Box::new(result)
+        })
     }
 }
 
@@ -100,47 +93,41 @@ mod replace_tests {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct RegexSplit {
     re: String,
-    #[serde(skip)]
-    regex: Option<regex::Regex>,
 }
 
 #[typetag::serde(name = "regex_split")]
 impl Processor for RegexSplit {
-    fn init(&mut self) {
-        self.regex.replace(Regex::new(&self.re).unwrap());
-    }
+    fn create<'a>(&self) -> ProcessHandler {
+        let re = Regex::new(&self.re).unwrap();
 
-    fn process<'a>(
-        &mut self,
-        batches: BoxStream<MessageBatch, Error>,
-    ) -> BoxStream<MessageBatch, Error> {
-        let re = self.regex.clone().unwrap();
+        Box::new(move |batches| {
+            let re = re.clone();
+            let result = batches.map(move |mut b| {
+                b.messages = b
+                    .messages
+                    .into_iter()
+                    .map(|message| {
+                        let source = String::from_utf8(message.data).unwrap();
+                        let new_messages: Vec<_> = re
+                            .split(&source)
+                            .map(|m| m.to_owned())
+                            .map(|data| Message {
+                                data: data.into_bytes(),
+                                ..Default::default()
+                            })
+                            .collect();
+                        new_messages
+                    })
+                    .collect::<Vec<Vec<_>>>()
+                    .concat();
+                b
+            });
 
-        let result = batches.map(move |mut b| {
-            b.messages = b
-                .messages
-                .into_iter()
-                .map(|message| {
-                    let source = String::from_utf8(message.data).unwrap();
-                    let new_messages: Vec<_> = re
-                        .split(&source)
-                        .map(|m| m.to_owned())
-                        .map(|data| Message {
-                            data: data.into_bytes(),
-                            ..Default::default()
-                        })
-                        .collect();
-                    new_messages
-                })
-                .collect::<Vec<Vec<_>>>()
-                .concat();
-            b
-        });
-
-        Box::new(result)
+            Box::new(result)
+        })
     }
 }
 
@@ -191,47 +178,41 @@ mod split_tests {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 struct RegexSelect {
     re: String,
-    #[serde(skip)]
-    regex: Option<regex::Regex>,
 }
 
 #[typetag::serde(name = "regex_select")]
 impl Processor for RegexSelect {
-    fn init(&mut self) {
-        self.regex.replace(Regex::new(&self.re).unwrap());
-    }
+    fn create<'a>(&self) -> ProcessHandler {
+        let re = Regex::new(&self.re).unwrap();
 
-    fn process<'a>(
-        &mut self,
-        batches: BoxStream<MessageBatch, Error>,
-    ) -> BoxStream<MessageBatch, Error> {
-        let re = self.regex.clone().unwrap();
+        Box::new(move |batches| {
+            let re = re.clone();
+            let result = batches.map(move |mut b| {
+                b.messages = b
+                    .messages
+                    .into_iter()
+                    .map(|message| {
+                        let source = String::from_utf8(message.data).unwrap();
+                        let new_messages: Vec<_> = re
+                            .find_iter(&source)
+                            .map(|m| m.to_owned())
+                            .map(|data| Message {
+                                data: data.as_str().to_owned().into_bytes(),
+                                ..Default::default()
+                            })
+                            .collect();
+                        new_messages
+                    })
+                    .collect::<Vec<Vec<_>>>()
+                    .concat();
+                b
+            });
 
-        let result = batches.map(move |mut b| {
-            b.messages = b
-                .messages
-                .into_iter()
-                .map(|message| {
-                    let source = String::from_utf8(message.data).unwrap();
-                    let new_messages: Vec<_> = re
-                        .find_iter(&source)
-                        .map(|m| m.to_owned())
-                        .map(|data| Message {
-                            data: data.as_str().to_owned().into_bytes(),
-                            ..Default::default()
-                        })
-                        .collect();
-                    new_messages
-                })
-                .collect::<Vec<Vec<_>>>()
-                .concat();
-            b
-        });
-
-        Box::new(result)
+            Box::new(result)
+        })
     }
 }
 

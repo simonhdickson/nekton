@@ -7,5 +7,5 @@ This is only a protoype so please don't use it for anything important.
 ## Example
 
 ```bash
-echo 'fried cheese' | cargo run config_examples/std.yaml
+echo 'cheese,goat' | cargo run -- -f config_examples/std.yaml
 ```

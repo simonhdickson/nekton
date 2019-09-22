@@ -10,12 +10,12 @@ use typetag::serde;
 
 use crate::{BoxFn, Message, MessageBatch, Source, Transaction};
 
-#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 struct StdIn;
 
 #[typetag::serde(name = "stdin")]
 impl Source for StdIn {
-    fn start(&self, mut f: BoxFn<Transaction, Error>) -> Result<(), Error> {
+    fn start(&self, f: BoxFn<Transaction, Error>) -> Result<(), Error> {
         let input = io::stdin();
         for line in input.lock().lines() {
             let mut batch = MessageBatch::default();
@@ -30,7 +30,7 @@ impl Source for StdIn {
 }
 
 #[cfg(feature = "http_server")]
-#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 struct HttpServer {
     address: String,
     path: String,
@@ -39,7 +39,7 @@ struct HttpServer {
 #[cfg(feature = "http_server")]
 #[typetag::serde(name = "http_server")]
 impl Source for HttpServer {
-    fn start(&self, mut f: BoxFn<Transaction, Error>) -> Result<(), Error> {
+    fn start(&self, f: BoxFn<Transaction, Error>) -> Result<(), Error> {
         use tiny_http::{Method, Response, Server};
 
         let server = Server::http(&self.address).unwrap();
