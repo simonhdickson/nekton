@@ -12,10 +12,6 @@ script:
   - cargo build --verbose --all
   - cargo test --verbose --all
 
-cache: cargo
-before_cache:
-  - chmod -R a+r $HOME/.cargo
-
 branches:
   only:
     - /^v\d+\.\d+\.\d+.*$/

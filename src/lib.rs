@@ -98,10 +98,10 @@ pub fn start_stream_processor(spec: Spec) {
 struct Opt {
     #[structopt(
         parse(from_os_str),
-        short = "f",
+        short = "c",
         long = "config_file",
         env = "CONFIG_FILE",
-        default_value = "config.yml"
+        default_value = "nekton.yml"
     )]
     config_file: PathBuf,
 }
