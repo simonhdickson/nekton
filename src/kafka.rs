@@ -41,6 +41,8 @@ impl ConsumerContext for CustomContext {
 struct KafkaIn {
     topics: Vec<String>,
     config: HashMap<String, String>,
+    #[serde(skip)]
+    consume_count: u32,
 }
 
 #[typetag::serde(name = "kafka")]
@@ -64,6 +66,7 @@ impl Source for KafkaIn {
 
         let message_stream = consumer.start();
 
+        let mut consumed_messages = 0;
         for message in message_stream.wait() {
             match message {
                 Err(_) => panic!("Error while reading from stream."),
@@ -81,6 +84,12 @@ impl Source for KafkaIn {
                             f(Transaction { batch }).wait().unwrap();
 
                             consumer.commit_message(&m, CommitMode::Sync).unwrap();
+                            if self.consume_count != 0 {
+                                consumed_messages += 1;
+                                if consumed_messages >= consumed_messages {
+                                    break;
+                                }
+                            }
                         }
                         Some(Err(e)) => {
                             panic!("Error while deserializing message payload: {:?}", e);
@@ -138,5 +147,70 @@ impl Sink for KafkaOut {
 
             Box::new(result)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::mpsc::channel;
+
+    use crate::{no_metdata_batches, no_metdata_messages};
+
+    macro_rules! source {
+        ( $topics:expr, $config:expr, $consume_count:expr ) => {{
+            $crate::run_source!(
+                KafkaIn {
+                    topics: $topics.into_iter().map(|t|t.to_string()).collect(),
+                    config: $config
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                    consume_count: $consume_count,
+                }
+            )
+        }};
+    }
+
+    macro_rules! sink {
+        ( $topic:expr, $config:expr, $input:expr ) => {{
+            $crate::run_sink!(
+                KafkaOut {
+                    topic: $topic.to_string(),
+                    config: $config
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                },
+                $input
+            )
+        }};
+    }
+
+    const SOURCE_CONFIG: [(&str, &str); 4] = [
+        ("bootstrap.servers", "localhost:9092"),
+        ("message.timeout.ms", "5000"),
+        ("auto.offset.reset", "earliest"),
+        ("group.id", "test-consumer"),
+    ];
+
+    const SINK_CONFIG: [(&str, &str); 2] = [
+        ("bootstrap.servers", "localhost:9092"),
+        ("message.timeout.ms", "5000"),
+    ];
+
+    #[test]
+    fn sink_source_kafka_message_test() {
+        let topic = uuid::Uuid::new_v4();
+
+        let messages = no_metdata_batches![no_metdata_messages![b"hello,world,cheese"]];
+
+        sink!(topic, SINK_CONFIG, messages.clone());
+
+        assert_eq!(
+            source!([topic], SOURCE_CONFIG, 1),
+            messages,
+        )
     }
 }

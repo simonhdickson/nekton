@@ -128,6 +128,21 @@ pub mod tests {
     use futures::future::{ok, Future};
 
     #[macro_export]
+    macro_rules! run_source {
+        ( $source:expr ) => {{
+            let (tx, rx) = channel();
+            $source
+            .start(Box::new(move |batch| {
+                tx.send(batch).unwrap();
+                Box::new(ok(()))
+            }))
+            .unwrap();
+
+            rx.iter().map(|i| i.batch.clone()).collect::<Vec<_>>()
+        }};
+    }
+
+    #[macro_export]
     macro_rules! run_processor {
         ( $process:expr, $input:expr ) => {{
             use crate::tests::block_on;
@@ -138,6 +153,20 @@ pub mod tests {
             block_on($process.create()(Box::new(
                 stream::iter_ok::<_, ()>($input).map_err(|_| format_err!("wtf")),
             )))
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! run_sink {
+        ( $sink:expr, $input:expr ) => {{
+            use failure::format_err;
+            use futures::stream;
+
+            $sink.create()(Box::new(
+                stream::iter_ok::<_, ()>($input).map_err(|_| format_err!("wtf")),
+            ))
+            .wait()
+            .unwrap()
         }};
     }
 
