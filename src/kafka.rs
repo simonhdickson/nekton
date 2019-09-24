@@ -86,7 +86,7 @@ impl Source for KafkaIn {
                             consumer.commit_message(&m, CommitMode::Sync).unwrap();
                             if self.consume_count != 0 {
                                 consumed_messages += 1;
-                                if self.consume_count >= consumed_messages {
+                                if consumed_messages >= self.consume_count {
                                     break;
                                 }
                             }
@@ -218,7 +218,7 @@ mod tests {
     fn sink_source_kafka_message_test_no_equal() {
         let topic = uuid::Uuid::new_v4();
 
-        sink!(topic, SINK_CONFIG, no_metdata_batches![no_metdata_messages![b"cheese"]]);
+        sink!(topic, SINK_CONFIG, no_metdata_batches![no_metdata_messages![b"hello,world,cheese"]]);
 
         assert_ne!(
             source!([topic], SOURCE_CONFIG, 1),
